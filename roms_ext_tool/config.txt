@@ -1,0 +1,112 @@
+!     This is ROMS Data Extractor config file.
+! 
+!     Modify it according to your ROMS configuration 
+! and following the instructions in the user's guide.
+!
+!     You should only modify text after the "=" symbol.
+!
+! naming convention (tracers)
+TRACERS_CONVENTION = D:\ROMS\Connemara\OUTPUT\HISTORY\CONN_%Y%m%d%H.nc
+!
+! naming convention (momentum)
+! MOMENTUM_CONVENTION = D:\ROMS\NE_Atlantic\OUTPUT\HOURLY\NEATL_%Y%m%d%H.nc
+!
+! start date
+IDATE = 2018-02-01 00:00:00
+!
+! end date
+EDATE = 2018-02-28 23:00:00
+!
+! time step (seconds)
+STEP = 3600
+!
+! time offset
+OFFSET = 1968-05-23 00:00:00
+!
+! variables (see prefixes below)
+! VARIABLES = 50
+!
+!  0	mean free surface
+!  1	minimum free surface
+!  2	maximum free surface
+!
+!  3	average temperature
+!  4 	minimum temperature
+!  5	maximum temperature
+!
+!  6	average surface temperature
+!  7	minimum surface temperature
+!  8	maximum surface temperature
+!
+!  9	average bottom temperature
+! 10	minimum bottom temperature
+! 11	maximum bottom temperature
+!
+! 12	average salinity
+! 13	minimum salinity
+! 14	maximum salinity
+!
+! 15	average surface salinity
+! 16	minimum surface salinity
+! 17	maximum surface salinity
+!
+! 18 	average bottom salinity
+! 19    minimum bottom salinity
+! 20    maximum bottom salinity
+!
+! 21	average density
+! 22	minimum density
+! 23	maximum density
+!
+! 24	average surface density
+! 25	minimum surface density
+! 26	maximum surface density
+!
+! 27	average bottom density
+! 28	minimum bottom density
+! 29	maximum bottom density
+!
+! 30	average u
+! 31	minimum u
+! 32	maximum u
+!
+! 33 	average surface u
+! 34    minimum surface u
+! 35	maximum surface u
+!
+! 36	average bottom u
+! 37	minimum bottom u
+! 38	maximum bottom u
+!
+! 39	average v
+! 40	minimum v
+! 41    maximum v
+!
+! 42	average surface v
+! 43	minimum surface v
+! 44	maximum surface v
+!
+! 45	average bottom v
+! 46	minimum bottom v
+! 47	maximum bottom v
+!
+! 48	average velocity
+! 49	maximum velocity
+!
+! 50	average surface velocity
+! 51    maximum surface velocity
+!
+! 52	average bottom velocity
+! 53	maximum bottom velocity
+!
+! 54 	average potential energy deficit
+! 55	minimum potential energy deficit
+! 56	maximum potential energy deficit
+!
+! 57	average mixed layer depth
+! 58	deepest mixed layer depth
+! 59	shallowest mixed layer depth
+!
+! 60	SST-based front index (average)
+! 61	SST-based front index (minimum)
+! 62    SST-based front index (maximum)
