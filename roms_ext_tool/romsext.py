@@ -91,6 +91,7 @@ class Root(tk.Tk):
         
         """ Read config file """
         self.readconfig() 
+        self.step_config = max(self.tstep_config, self.mstep_config)
         
         """ Read coastline """
         self.coast_x = []
@@ -136,7 +137,7 @@ class Root(tk.Tk):
         self.browseButton = tk.Button(self.browseFrame, text="Select output directory", command=self.fileDialog)
         self.browseButton.grid(row=0, column=0, padx=5, pady=5)
         # Browse entry
-        self.browseEntry = tk.Entry(self.browseFrame, width=29)
+        self.browseEntry = tk.Entry(self.browseFrame, width=50)
         self.browseEntry.grid(row=0, column=1, padx=5, pady=5) 
         # Filename label
         self.fileLabel = tk.Label(self.browseFrame, text="Output file name")
@@ -164,15 +165,13 @@ class Root(tk.Tk):
         self.zLabel = tk.Label(self.zFrame, text="comma-separated depths [meter]")
         self.zLabel.grid(row=0, column=0, padx=0)
         # Z-levels entry
-        self.zEntry = tk.Entry(self.zFrame, width=60)        
+        self.zEntry = tk.Entry(self.zFrame, width=80)        
         self.zEntry.grid(row=0, column=1, padx=5, pady=5)
                        
         """ Process dates """
         self.dates = []; self.mon = []
-        self.time0 = datetime(self.idate_config[0], self.idate_config[1], self.idate_config[2], \
-                              self.idate_config[3], self.idate_config[4], self.idate_config[5])
-        self.time1 = datetime(self.edate_config[0], self.edate_config[1], self.edate_config[2], \
-                              self.edate_config[3], self.edate_config[4], self.edate_config[5])
+        self.time0 = self.todatetime(self.idate_config)               
+        self.time1 = self.todatetime(self.edate_config)               
         self.time1 += timedelta(seconds=self.step_config)
         while self.time0 < self.time1:
             self.dates.append(self.time0)
@@ -190,6 +189,14 @@ class Root(tk.Tk):
         # "Every" selection
         self.everyLabel = tk.Label(self.quickFrame, text="Every")
         self.everyLabel.pack(side=tk.LEFT, padx=8, pady=5)
+        # Step CheckButton
+        self.steplySwitch = tk.IntVar(value=0)
+        self.steplyCheckButton = tk.Checkbutton(self.quickFrame, text = "step", variable = self.steplySwitch)
+        self.steplyCheckButton.pack(side=tk.LEFT, padx=8, pady=5)        
+        # Daily Checkbutton
+        self.dailySwitch = tk.IntVar(value=0)
+        self.dailyCheckButton = tk.Checkbutton(self.quickFrame, text = "day", variable = self.dailySwitch)
+        self.dailyCheckButton.pack(side=tk.LEFT, padx=8, pady=5)
         # Weekly CheckButton
         self.weeklySwitch = tk.IntVar(value=0)
         self.weeklyCheckButton = tk.Checkbutton(self.quickFrame, text = "week", variable = self.weeklySwitch)
@@ -225,13 +232,13 @@ class Root(tk.Tk):
         self.startLabel = tk.Label(self.manualFrame, text="From")
         self.startLabel.grid(row=0, column=0, padx=5, pady=5)
          # Start drop-down menu
-        self.idate = ttk.Combobox(self.manualFrame, values=self.dates, state="readonly", width=18)
+        self.idate = ttk.Combobox(self.manualFrame, values=self.dates, state="readonly", width=37)
         self.idate.grid(row=0, column=1, padx=5)
         # "end" label
         self.endLabel = tk.Label(self.manualFrame, text="to")
         self.endLabel.grid(row=0, column=2, padx=5)
         # End time drop-down menu
-        self.edate = ttk.Combobox(self.manualFrame, values=self.dates, state="readonly", width=18)
+        self.edate = ttk.Combobox(self.manualFrame, values=self.dates, state="readonly", width=37)
         self.edate.grid(row=0, column=3, padx=5)        
         # Add button
         self.addPeriodButton = tk.Button(self.manualFrame, text="Add", command=self.addPeriod)
@@ -252,12 +259,18 @@ class Root(tk.Tk):
         self.rep = {"%Y": self.idate_config_str[0], \
                "%y": self.idate_config_str[0][2:], \
                "%m": self.idate_config_str[1], \
-               "%b": self.monthsList[self.idate_config[1]], \
+               "%b": self.monthsList[self.idate_config[1]-1], \
                "%d": self.idate_config_str[2], \
                "%o": str(datetime(self.idate_config[0], self.idate_config[1], self.idate_config[2]).timetuple().tm_yday).zfill(3), \
                "%H": self.idate_config_str[3], \
                "%M": self.idate_config_str[4], \
-               "%S": self.idate_config_str[5]}
+               "%S": self.idate_config_str[5], \
+               "%rt": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.tstep_config, \
+                                             self.todatetime(self.idate_config)), \
+               "%rm": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.mstep_config, \
+                                             self.todatetime(self.idate_config))}
         self.rep = dict((re.escape(kk), vv) for kk, vv in self.rep.items()) 
         pattern = re.compile("|".join(self.rep.keys()))
         f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)
@@ -337,7 +350,7 @@ class Root(tk.Tk):
         self.titleLabel = tk.Label(self.varFrame, text="title")
         self.titleLabel.grid(row=0, column=2, padx=0)        
         # Title entry field
-        self.title = tk.Entry(self.varFrame, width=25)
+        self.title = tk.Entry(self.varFrame, width=40)
         self.title.grid(row=0, column=3, padx=5)
         # Minimum color label
         self.minlabel = tk.Label(self.varFrame, text="min")
@@ -407,7 +420,7 @@ class Root(tk.Tk):
         self.displayFrame = tk.LabelFrame(self, text="Display", padx=5, pady=5)
         self.displayFrame.grid(row=6, column=0, columnspan=2, sticky=tk.W + tk.E, padx=10, pady=10)
         # Summary display
-        self.summaryDisplay = tk.Text(self.displayFrame, height=10, width=125, padx=5, pady=5)
+        self.summaryDisplay = tk.Text(self.displayFrame, height=10, width=140, padx=5, pady=5)
         self.summaryDisplay.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)           
         # Scrollbar
         self.scrollbar = ttk.Scrollbar(self.displayFrame, command=self.summaryDisplay.yview)
@@ -460,6 +473,14 @@ class Root(tk.Tk):
                     y_coast += Y; y_coast.append(nan); break
         self.coast_x = x_coast; self.coast_y = y_coast
         
+    def get_running_number(self, idate, step, date):                    
+        return str(int(1 + (date - idate).total_seconds() / step)).zfill(4)
+    
+    def todatetime(self, timelist):
+        # Convert datevec to datetime
+        [y, m, d, H, M, S] = timelist
+        return datetime(y, m, d, H, M, S)
+        
     def readconfig(self):        
         infile = open("config.txt", "r")        
         for line in infile:
@@ -481,12 +502,16 @@ class Root(tk.Tk):
                     self.edate_config_str = re.findall(r"[\w']+", entry)
                     self.edate_config = [int(i) for i in self.edate_config_str]     
                 elif line[0] == "S":
-                    # STEP
-                    self.step_config = int(entry)                
+                    # TSTEP
+                    self.tstep_config = int(entry)  
+                    self.mstep_config = int(entry)
+                elif line[0] == "Z":
+                    # MSTEP
+                    self.mstep_config = int(entry)
                 elif line[0] == "O":
                     # OFFSET
                     off = [int(i) for i in re.findall(r"[\w']+", entry)]                    
-                    self.offset = datetime(off[0], off[1], off[2], off[3], off[4], off[5])
+                    self.offset = self.todatetime(off)                    
                 elif line[0] == "V":
                     # VARIABLES
                     self.choices = tuple([int(i) for i in entry.split(",")])
@@ -695,6 +720,7 @@ class Root(tk.Tk):
         
         if ( self.mode.get() < 2 ):
             status = self.layers(self.name, self.z, self.t0, self.t1, \
+                            steply=self.steplySwitch.get(), daily=self.dailySwitch.get(), \
                             weekly=self.weeklySwitch.get(), monthly=self.monthlySwitch.get(), \
                             imonth=self.imonth.get(), iyear=self.iyear.get(), \
                             emonth=self.emonth.get(), eyear=self.eyear.get(), \
@@ -703,6 +729,7 @@ class Root(tk.Tk):
                             makeplot=self.makeplot.get(), fmt=fmt, userkey=self.userdict)
         else:  
             status = self.timeseries(self.name, self.z, self.t0, self.t1, \
+                            steply=self.steplySwitch.get(), daily=self.dailySwitch.get(), \
                             weekly=self.weeklySwitch.get(), monthly=self.monthlySwitch.get(), \
                             imonth=self.imonth.get(), iyear=self.iyear.get(), \
                             emonth=self.emonth.get(), eyear=self.eyear.get(), \
@@ -831,9 +858,9 @@ class Root(tk.Tk):
     	"shallowest mixed layer depth":       (("y", "x", "T"),       3, "shallowest Mixed Layer Depth",              "meter",         lambda x: x.max(axis=2),  ("temp", "zeta"),          ("MLD",),                   "linear", [-100, 0],    "jet", "real"), \
     
     
-    	"SST-based front index (average)":    (("y", "x", "T"),       3, "SST - Front Index (average)",               "Celsius m-1",   lambda x: x.mean(axis=2), ("temp",),                 ("sstfi",),                 "linear", [0, 5],       "jet", "real"), \
-    	"SST-based front index (minimum)":    (("y", "x", "T"),       3, "SST - Front Index (minimum)",               "Celsius m-1",   lambda x: x.min(axis=2),  ("temp",),                 ("sstfi",),                 "linear", [0, 5],       "jet", "real"), \
-    	"SST-based front index (maximum)":    (("y", "x", "T"),       3, "SST - Front Index (maximum)",               "Celsius m-1",   lambda x: x.max(axis=2),  ("temp",),                 ("sstfi",),                 "linear", [0, 5],       "jet", "real"), \
+    	"SST-based front index (average)":    (("y", "x", "T"),       3, "SST - Front Index (average)",               "",   lambda x: x.mean(axis=2), ("temp",),                 ("sstfi",),                 "linear", [0, 5],       "jet", "real"), \
+    	"SST-based front index (minimum)":    (("y", "x", "T"),       3, "SST - Front Index (minimum)",               "",   lambda x: x.min(axis=2),  ("temp",),                 ("sstfi",),                 "linear", [0, 5],       "jet", "real"), \
+    	"SST-based front index (maximum)":    (("y", "x", "T"),       3, "SST - Front Index (maximum)",               "",   lambda x: x.max(axis=2),  ("temp",),                 ("sstfi",),                 "linear", [0, 5],       "jet", "real"), \
         }
             
         # Subset from user's choices
@@ -847,7 +874,7 @@ class Root(tk.Tk):
         return var      
         
     def layers(self, cdf, z, T0, T1, \
-               weekly=0, monthly=0, imonth="Jan", iyear="1997", emonth="Dec", eyear="2015", 
+               steply=0, daily=0, weekly=0, monthly=0, imonth="Jan", iyear="1997", emonth="Dec", eyear="2015", 
                nb=90, sb=-90, eb=180, wb=-180, makeplot=0, fmt = "png", userkey=[]):
         
         """  """
@@ -942,6 +969,22 @@ class Root(tk.Tk):
             emn = eyear * 12 + emonth
             if imn > emn:
                 imn, emn = emn, imn       
+            if steply:
+                idate, edate = self.get_date(imn, emn)
+                for fecha in self.dates:
+                    if ( fecha >= idate and fecha <= edate):
+                        TIME.append([fecha, fecha])
+            if daily:
+                idate, edate = self.get_date(imn, emn)
+                time = []
+                while idate <= ( edate + timedelta(seconds=self.step_config)):  
+                    past = idate - timedelta(seconds=self.step_config)
+                    if ( past.day != idate.day ):
+                        if len(time) == 86400 / self.step_config:
+                            TIME.append(time)
+                        time = []
+                    time.append(idate)
+                    idate += timedelta(seconds=self.step_config)
             if weekly:     
                 idate, edate = self.get_date(imn, emn)                    
                 time = []
@@ -1018,8 +1061,43 @@ class Root(tk.Tk):
         time = list(dict.fromkeys(time))
         # Sort
         time.sort()
+        
+        """ Find missing files """
+        rtime = time
+        for item in rtime:
+            """ Get input file name matching date """
+            self.rep = {"%Y": item.strftime("%Y"), \
+               "%y": item.strftime("%y"), \
+               "%m": item.strftime("%m"), \
+               "%b": item.strftime("%b"), \
+               "%d": item.strftime("%d"), \
+               "%o": str(item.timetuple().tm_yday).zfill(3), \
+               "%H": item.strftime("%H"), \
+               "%M": item.strftime("%M"), \
+               "%S": item.strftime("%S"), \
+               "%rt": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.tstep_config, \
+                                             item), \
+               "%rm": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.mstep_config, \
+                                             item)}
+            self.rep = dict((re.escape(kk), vv) for kk, vv in self.rep.items()) 
+            pattern = re.compile("|".join(self.rep.keys()))
+            
+            f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)
+            if not os.path.isfile(f):
+                print("File " + f + " not found. Skipping...")
+                time.remove(item)
+                continue            
+            
+            g = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.momentum_convention)
+            if not os.path.isfile(g):
+                print("File " + g + " not found. Skipping...")
+                time.remove(item)
+                continue                        
+                        
         # Get number of iterations over time
-        T = len(time)      
+        T = len(time) 
         
         """ Get input file name matching initial date """
         self.rep = {"%Y": time[0].strftime("%Y"), \
@@ -1030,7 +1108,13 @@ class Root(tk.Tk):
                "%o": str(time[0].timetuple().tm_yday).zfill(3), \
                "%H": time[0].strftime("%H"), \
                "%M": time[0].strftime("%M"), \
-               "%S": time[0].strftime("%S")}
+               "%S": time[0].strftime("%S"), \
+               "%rt": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.tstep_config, \
+                                             time[0]), \
+               "%rm": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.mstep_config, \
+                                             time[0])}
         self.rep = dict((re.escape(kk), vv) for kk, vv in self.rep.items()) 
         pattern = re.compile("|".join(self.rep.keys()))
         f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)
@@ -1100,40 +1184,57 @@ class Root(tk.Tk):
         o = netCDF4.Dataset(cdf, "a")
         
         """ Create output arrays """
-        free_surface        = np.ma.zeros(shape=(Lp, Mp, T))
-        
-        temperature         = np.ma.zeros(shape=(Lp, Mp, N, T))
-        surface_temperature = np.ma.zeros(shape=(Lp, Mp, T))
-        bottom_temperature  = np.ma.zeros(shape=(Lp, Mp, T))        
-        
-        salinity            = np.ma.zeros(shape=(Lp, Mp, N, T))
-        surface_salinity    = np.ma.zeros(shape=(Lp, Mp, T))
-        bottom_salinity     = np.ma.zeros(shape=(Lp, Mp, T))
-                
-        density             = np.ma.zeros(shape=(Lp, Mp, N, T))
-        surface_density     = np.ma.zeros(shape=(Lp, Mp, T))
-        bottom_density      = np.ma.zeros(shape=(Lp, Mp, T))
-        
-        u_current           = np.ma.zeros(shape=(Lp, Mp, N, T))
-        surface_u           = np.ma.zeros(shape=(Lp, Mp, T))
-        bottom_u            = np.ma.zeros(shape=(Lp, Mp, T))
-        
-        v_current           = np.ma.zeros(shape=(Lp, Mp, N, T))
-        surface_v           = np.ma.zeros(shape=(Lp, Mp, T))
-        bottom_v            = np.ma.zeros(shape=(Lp, Mp, T))
-        
-        velocity               = np.ma.zeros(shape=(Lp, Mp, N, T))
-        surface_velocity       = np.ma.zeros(shape=(Lp, Mp, T))
-        bottom_velocity        = np.ma.zeros(shape=(Lp, Mp, T))
-        
-        angle               = np.ma.zeros(shape=(Lp, Mp, N, T))
-        surface_angle       = np.ma.zeros(shape=(Lp, Mp, T))
-        bottom_angle        = np.ma.zeros(shape=(Lp, Mp, T))
-        
-        PED                 = np.ma.zeros(shape=(Lp, Mp, T))
-        MLD                 = np.ma.zeros(shape=(Lp, Mp, T))
-        sstfi               = np.ma.zeros(shape=(Lp, Mp, T))
-        
+        for ar in uarray:
+            if ar == "free-surface":
+                free_surface        = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "temperature":
+                temperature         = np.ma.zeros(shape=(Lp, Mp, N, T))
+            elif ar == "surface_temperature":  
+                surface_temperature = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "bottom_temperature":
+                bottom_temperature  = np.ma.zeros(shape=(Lp, Mp, T))        
+            elif ar == "salinity":
+                salinity            = np.ma.zeros(shape=(Lp, Mp, N, T))
+            elif ar == "surface_salinity":
+                surface_salinity    = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "bottom_salinity":
+                bottom_salinity     = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "density":
+                density             = np.ma.zeros(shape=(Lp, Mp, N, T))
+            elif ar == "surface_density":
+                surface_density     = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "bottom_density":
+                bottom_density      = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "u_current":
+                u_current           = np.ma.zeros(shape=(Lp, Mp, N, T))
+            elif ar == "surface_u":
+                surface_u           = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "bottom_u":
+                bottom_u            = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "v_current":
+                v_current           = np.ma.zeros(shape=(Lp, Mp, N, T))
+            elif ar == "surface_v":
+                surface_v           = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "bottom_v":
+                bottom_v            = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "velocity":
+                velocity            = np.ma.zeros(shape=(Lp, Mp, N, T))
+            elif ar == "surface_velocity":
+                surface_velocity    = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "bottom_velocity":
+                bottom_velocity     = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "angle":
+                angle               = np.ma.zeros(shape=(Lp, Mp, N, T))
+            elif ar == "surface_angle":
+                surface_angle       = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "bottom_angle":
+                bottom_angle        = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "PED":
+                PED                 = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "MLD":
+                MLD                 = np.ma.zeros(shape=(Lp, Mp, T))
+            elif ar == "sstfi":
+                sstfi               = np.ma.zeros(shape=(Lp, Mp, T))        
 
         f.close() 
         
@@ -1153,11 +1254,17 @@ class Root(tk.Tk):
                "%o": str(item.timetuple().tm_yday).zfill(3), \
                "%H": item.strftime("%H"), \
                "%M": item.strftime("%M"), \
-               "%S": item.strftime("%S")}
+               "%S": item.strftime("%S"), \
+               "%rt": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.tstep_config, \
+                                             item), \
+               "%rm": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.mstep_config, \
+                                             item)}
             self.rep = dict((re.escape(kk), vv) for kk, vv in self.rep.items()) 
             pattern = re.compile("|".join(self.rep.keys()))
             f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)
-            f = netCDF4.Dataset(f, "r")
+            f = netCDF4.Dataset(f, "r") 
             g = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.momentum_convention)
             g = netCDF4.Dataset(g, "r")
             
@@ -1457,7 +1564,7 @@ class Root(tk.Tk):
                             u = np.cos(np.deg2rad(dire))
                             v = np.sin(np.deg2rad(dire))  
                             # Draw quiver plot
-                            ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], zorder=1)                            
+                            ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], scale=40, zorder=1)                            
                         else:
                             # Get magnitude
                             magn = var_i[:, :, TIME.index(period)]
@@ -1523,7 +1630,7 @@ class Root(tk.Tk):
                                 u = np.cos(np.deg2rad(dire))
                                 v = np.sin(np.deg2rad(dire))  
                                 # Draw quiver plot
-                                ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], zorder=1)
+                                ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], scale=40, zorder=1)
                                 
                             else:
                                 # Get magnitude
@@ -1560,7 +1667,7 @@ class Root(tk.Tk):
         return boolean
     
     def timeseries(self, cdf, z, T0, T1, \
-               weekly=0, monthly=0, imonth="Jan", iyear="1997", emonth="Dec", eyear="2015", 
+               steply=0, daily=0, weekly=0, monthly=0, imonth="Jan", iyear="1997", emonth="Dec", eyear="2015", 
                nb=90, sb=-90, eb=180, wb=-180, makeplot=0, fmt = "png", userkey=[]):        
         """  """
                 
@@ -1651,7 +1758,23 @@ class Root(tk.Tk):
             # Get end serial month number
             emn = eyear * 12 + emonth
             if imn > emn:
-                imn, emn = emn, imn       
+                imn, emn = emn, imn  
+            if steply:
+                idate, edate = self.get_date(imn, emn)
+                for fecha in self.dates:
+                    if ( fecha >= idate and fecha <= edate):
+                        TIME.append([fecha, fecha])
+            if daily:
+                idate, edate = self.get_date(imn, emn)
+                time = []
+                while idate <= ( edate + timedelta(seconds=self.step_config)):  
+                    past = idate - timedelta(seconds=self.step_config)
+                    if ( past.day != idate.day ):
+                        if len(time) == 86400 / self.step_config:
+                            TIME.append(time)
+                        time = []
+                    time.append(idate)
+                    idate += timedelta(seconds=self.step_config)                
             if weekly:     
                 idate, edate = self.get_date(imn, emn)                    
                 time = []
@@ -1740,7 +1863,13 @@ class Root(tk.Tk):
                "%o": str(time[0].timetuple().tm_yday).zfill(3), \
                "%H": time[0].strftime("%H"), \
                "%M": time[0].strftime("%M"), \
-               "%S": time[0].strftime("%S")}
+               "%S": time[0].strftime("%S"), \
+               "%rt": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.tstep_config, \
+                                             time[0]), \
+               "%rm": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.mstep_config, \
+                                             time[0])}
         self.rep = dict((re.escape(kk), vv) for kk, vv in self.rep.items()) 
         pattern = re.compile("|".join(self.rep.keys()))
         f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)
@@ -1807,8 +1936,8 @@ class Root(tk.Tk):
         self.cdfseries(cdf, (nb, sb, eb, wb), N, T, z, time, self.offset, var)        
         o = netCDF4.Dataset(cdf, "a")        
         
-        f.close()    
-        
+        f.close()  
+          
         """ MAIN LOOP """        
         self.summaryDisplay.insert(tk.END, "\n\nSTEP 1/" + str(2 + makeplot) + ": Loop over time...\n\n")
         self.update()
@@ -1825,14 +1954,29 @@ class Root(tk.Tk):
                "%o": str(item.timetuple().tm_yday).zfill(3), \
                "%H": item.strftime("%H"), \
                "%M": item.strftime("%M"), \
-               "%S": item.strftime("%S")}
+               "%S": item.strftime("%S"), \
+               "%rt": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.tstep_config, \
+                                             item), \
+               "%rm": self.get_running_number(self.todatetime(self.idate_config), \
+                                             self.mstep_config, \
+                                             item)}
             self.rep = dict((re.escape(kk), vv) for kk, vv in self.rep.items()) 
             pattern = re.compile("|".join(self.rep.keys()))
             f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)
-            f = netCDF4.Dataset(f, "r")    
             g = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.momentum_convention)
-            g = netCDF4.Dataset(g, "r")   
             
+            try:
+                f = netCDF4.Dataset(f, "r")
+            except FileNotFoundError:
+                print("File " + f + " not found. Skipping...")
+                continue
+            try:
+                g = netCDF4.Dataset(g, "r")
+            except FileNotFoundError:
+                print("File " + g + " not found. Skipping...")
+                continue
+                
             """ Dealing with time... """
             # Read time from ocean file
             time_file = f.variables["ocean_time"][:].tolist()
@@ -2334,7 +2478,7 @@ class Root(tk.Tk):
                     o.variables[en][time.index(item)] = self.sobel(temp[-1, :, :], mask).min()
                 
                 elif en == "SST-based front index (maximum)":
-                    o.variables[en][time.index(item)] = self.sobel(temp[-1, :, :], mask).max()
+                    o.variables[en][time.index(item)] = self.sobel(temp[-1, :, :], mask).max()                    
                 
                 else:                              
                     raise ValueError("Unavailable variable")  
@@ -2418,15 +2562,27 @@ class Root(tk.Tk):
                         
                 elif nd == 4:
                     for level in z:
-                        var_z = var_i[z.index(level)]
+                        if ty == "complex":
+                            var_z = var_i[z.index(level)][:]
+                        else:                                
+                            var_z = var_i[z.index(level)]
+                            
                         for period in TIME:
-                            data = [(i, var_z[tiempo.index(i)]) for i in tiempo if i in period]
+                            if ty == "complex":
+                                data = [(i, var_z[tiempo.index(i)][0]) for i in tiempo if i in period]                            
+                            else:
+                                data = [(i, var_z[tiempo.index(i)]) for i in tiempo if i in period]
                             
                             # New axes
                             fig, ax = plt.subplots(figsize=(13.11, 8.10))                        
                             
                             # Plot time series
                             ax.plot_date(*zip(*data), "b.-"); ax.grid()
+                            
+                            if ty == "complex":                            
+                                dire = [var_z[tiempo.index(i)][1] for i in tiempo if i in period]
+                                u_plot = np.cos(np.deg2rad(dire)); v_plot = np.sin(np.deg2rad(dire))
+                                ax.quiver(period, [0 for i in period], u_plot, v_plot)
                             
                             # x-axis
                             ax.xaxis.set_major_formatter( DateFormatter('%d-%b-%Y') ); plt.xticks(rotation=90) 
@@ -2510,7 +2666,7 @@ class Root(tk.Tk):
             # depth above
             z1 = z[i+1, :, :]
             # Check whether the MLD condition is met
-            w = t0 > .5
+            w = t0 >= .5
             # Vertical linear interpolation 
             mld[w] = z1[w] + (z0[w] - z1[w])*(.5 - t1[w])/(t0[w] - t1[w]) 
             
@@ -2644,6 +2800,8 @@ class Root(tk.Tk):
         
         grad[:,0] = numpy.nan; grad[:,-1] = numpy.nan; 
         grad[0,:] = numpy.nan; grad[-1,:] = numpy.nan;
+        
+        grad.mask[numpy.isnan(grad)] = True
         
         return grad
     
@@ -2835,7 +2993,7 @@ class Root(tk.Tk):
         time.units = "seconds"
         time.offset = offset.strftime("%Y-%b-%d %H:%M")        
         time.first_column = "starting time"        
-        time.third_column = "end time"
+        time.second_column = "end time"
         time[:] = np.array([[(item - offset).total_seconds() for item in t0], \
                                [(item - offset).total_seconds() for item in t1]])
     
@@ -2863,7 +3021,8 @@ class Root(tk.Tk):
                 
         f.close()
         
-    def cdfseries(self, cdf, bry, N, T, z, TIME, offset, var):         
+    def cdfseries(self, cdf, bry, N, T, z, TIME, offset, var):  
+        import numpy as np
         """ Build output NetCDF """        
         f = netCDF4.Dataset(cdf, "w", format="NETCDF4")
         
@@ -2916,6 +3075,7 @@ class Root(tk.Tk):
             A.long_name = i3
             if i4:
                 A.units = i4
+            A[:] = np.nan
                 
         f.close()
     
@@ -2974,6 +3134,10 @@ class Root(tk.Tk):
         c = b[iidx, jidx, kidx, ind].reshape((L, M, N))
         return c
      
-if __name__ == "__main__" :    
+if __name__ == "__main__" :  
+    import sys
+    orig = sys.stdout
+    sys.stdout = open("log.txt", "w")
     root = Root()
     root.mainloop() 
+    sys.stdout = orig
