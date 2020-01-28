@@ -1063,8 +1063,8 @@ class Root(tk.Tk):
         time.sort()
         
         """ Find missing files """
-        rtime = time
-        for item in rtime:
+        rtime = 1 * time
+        for item in rtime:            
             """ Get input file name matching date """
             self.rep = {"%Y": item.strftime("%Y"), \
                "%y": item.strftime("%y"), \
@@ -1084,7 +1084,7 @@ class Root(tk.Tk):
             self.rep = dict((re.escape(kk), vv) for kk, vv in self.rep.items()) 
             pattern = re.compile("|".join(self.rep.keys()))
             
-            f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)
+            f = pattern.sub(lambda m: self.rep[re.escape(m.group(0))], self.tracers_convention)            
             if not os.path.isfile(f):
                 print("File " + f + " not found. Skipping...")
                 time.remove(item)
