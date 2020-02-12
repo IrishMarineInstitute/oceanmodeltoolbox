@@ -11,7 +11,7 @@
 !
 !  Created by:            Diego Pereiro
 !  Created on:            15 January 2020
-!  Last Modified on:      11 February 2020
+!  Last Modified on:      12 February 2020
 !
 !
 !
@@ -2317,7 +2317,7 @@ class Root(tk.Tk):
         self.summaryDisplay.insert(tk.END, "\n\nSTEP 1/" + str(2 + makeplot) + ": Loop over time...\n\n")
         self.update()
         for item in time:
-            print("\n" + i.strftime("%d-%b-%Y %H:%M"))            
+            print("\n" + item.strftime("%d-%b-%Y %H:%M"))            
             self.summaryDisplay.insert(tk.END, "\n" + item.strftime("%d-%b-%Y %H:%M") + "\n")
             self.update(); self.summaryDisplay.yview_moveto(1)
             
@@ -2415,7 +2415,12 @@ class Root(tk.Tk):
                     self.update(); self.summaryDisplay.yview_moveto(1)
                     v = 100 * self.v2rho(np.squeeze(G.variables["v"][ti, :, :, :])).filled(fill_value=np.nan)
                     v = v[:, sb : nb, wb : eb]
-            
+                   
+            if ("temp" in roms or "salt" in roms):
+                    F.close()
+            if ("u" in roms or "v" in roms or "zeta" in roms):  
+                    G.close()
+                                
             if ( "u" in roms or "v" in roms ):
                 # Take grid rotation into account
                 uang =  u * np.cos(gridangle) -  v * np.sin(gridangle)
@@ -2929,9 +2934,6 @@ class Root(tk.Tk):
             if "w_z"    in locals(): del w_z
             if "PED"    in locals(): del PED
             if "MLD"    in locals(): del MLD
-                            
-            f.close()    
-            g.close()
                         
         o.close()
                 
@@ -2939,7 +2941,7 @@ class Root(tk.Tk):
             
             o = netCDF4.Dataset(cdf, "r"); 
             
-            tiempo = o.variables["time"][:]; tiempo = [self.offset + timedelta(seconds=item) for item in tiempo]
+            tiempo = o.variables["time"][:].tolist(); tiempo = [self.offset + timedelta(seconds=item) for item in tiempo]
             
             from matplotlib.dates import  DateFormatter
             import matplotlib.pyplot as plt         
@@ -3440,7 +3442,7 @@ class Root(tk.Tk):
             depth[:] = z
         
         """ T """
-        time = f.createVariable("time", "f4", \
+        time = f.createVariable("time", "f8", \
                                 dimensions=("two", "T"), zlib=True)
         time.long_name = "user-selected periods"
         time.units = "seconds"
@@ -3503,7 +3505,7 @@ class Root(tk.Tk):
             depth[:] = z
         
         """ T """
-        time = f.createVariable("time", "f4", dimensions=("T"), \
+        time = f.createVariable("time", "f8", dimensions=("T"), \
                                 zlib=True)
         time.long_name = "time"
         time.units = "seconds"
