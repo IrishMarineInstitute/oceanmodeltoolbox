@@ -11,7 +11,7 @@
 !
 !  Created by:            Diego Pereiro
 !  Created on:            15 January 2020
-!  Last Modified on:      12 February 2020
+!  Last Modified on:      24 February 2020
 !
 !
 !
@@ -64,20 +64,29 @@
 
 import warnings
 warnings.filterwarnings("ignore")
+
 import matplotlib
 matplotlib.use("TkAgg")
+
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+plt.ioff()
+
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, ttk
+
 import netCDF4
 import scipy
 import cftime
+
 import re
-from tkinter import ttk
+
 from datetime import datetime, timedelta
-from math import ceil, floor
+
+from math import ceil, floor, isnan
+
+from itertools import compress, groupby
 
 class Root(tk.Tk):  
     
@@ -251,7 +260,7 @@ class Root(tk.Tk):
         # Time period entry field
         self.timeEntry = tk.Entry(self.manualFrame, width=90, state="disabled", \
                                   disabledbackground="white", disabledforeground="black")
-        self.timeEntry.grid(row=1, column=0, columnspan=8, sticky=tk.E + tk.W, padx=5, pady=5)
+        self.timeEntry.grid(row=1, column=0, columnspan=8, sticky=tk.E + tk.W, padx=5, pady=5)        
         # Scrollbar
         self.tscrollbar = ttk.Scrollbar(self.manualFrame, command=self.timeEntry.xview, orient=tk.HORIZONTAL)
         self.tscrollbar.grid(row=2, column=0, columnspan=8, sticky=tk.E + tk.W, padx=5)
@@ -445,7 +454,7 @@ class Root(tk.Tk):
         
         # Upper-left icon
         self.wm_iconbitmap("icon.ico") 
-        
+
     def drawshore(self, ax, x, y, nfill=100):
         """ Draw the coastline """
         import numpy as np
@@ -561,9 +570,10 @@ class Root(tk.Tk):
             # Modify text in entry field
             self.varEntry.configure(state="normal")
             string = self.varEntry.get()
-            substr = string[string.find("%d. KEY" % n0):string.find("%d. KEY" % n1)]            
+            substr = string[string.find("%d. KEY" % n0)::]            
             self.varEntry.delete(0, tk.END)            
-            self.varEntry.insert(tk.END, string.replace(substr, ""))            
+            self.varEntry.insert(tk.END, string.replace(substr, ""))   
+            self.update(); self.varEntry.xview_moveto(1)            
             self.varEntry.configure(state="disabled")
     
     def delTime(self):
@@ -579,18 +589,15 @@ class Root(tk.Tk):
             # Modify text in entry field
             self.timeEntry.configure(state="normal")
             string = self.timeEntry.get()
-            substr = string[string.find("%d. " % n0):string.find("%d. " % n1)]    
+            substr = string[string.find("%d. " % n0)::]    
             self.timeEntry.delete(0, tk.END)
             self.timeEntry.insert(tk.END, string.replace(substr, ""))
+            self.update(); self.timeEntry.xview_moveto(1)            
             self.timeEntry.configure(state="disabled")
         
     def TextBoxUpdate(self, event):
         self.title.delete(0, tk.END)
         self.title.insert(0, self.long[self.keylist.index(self.key.get())])
-        self.minimo.delete(0, tk.END)
-        self.minimo.insert(0, self.caxis[self.keylist.index(self.key.get())][0])
-        self.maximo.delete(0, tk.END)
-        self.maximo.insert(0, self.caxis[self.keylist.index(self.key.get())][1]) 
         if self.cscale[self.keylist.index(self.key.get())] == "linear":
             self.scale.set(1)
         elif self.cscale[self.keylist.index(self.key.get())] == "log":
@@ -609,23 +616,26 @@ class Root(tk.Tk):
             # Description
             lg = self.title.get()
             # Color min.
-            c0 = self.minimo.get() 
-            try:
-                float(c0)
-            except ValueError:      
-                self.summaryDisplay.delete("1.0", tk.END)
-                self.summaryDisplay.insert(tk.END, "Warning! Not a valid minimum color range. " + \
-                                           "Use a dot (.) as decimal separator\n\n")
-                return
+            c0 = self.minimo.get().strip() 
             # Color max.
-            c1 = self.maximo.get()
-            try:
-                float(c1)
-            except ValueError:  
-                self.summaryDisplay.delete("1.0", tk.END)
-                self.summaryDisplay.insert(tk.END, "Warning! Not a valid maximum color range. " + \
-                                           "Use a dot (.) as decimal separator\n\n")
-                return
+            c1 = self.maximo.get().strip()
+            if ( c0 ) and ( c1 ) :            
+                try:
+                    c0 = float(c0)
+                except ValueError:      
+                    self.summaryDisplay.delete("1.0", tk.END)
+                    self.summaryDisplay.insert(tk.END, "Warning! Not a valid minimum color range. " + \
+                                               "Use a dot (.) as decimal separator\n\n")
+                    return
+                try:
+                    c1 = float(c1)
+                except ValueError:  
+                    self.summaryDisplay.delete("1.0", tk.END)
+                    self.summaryDisplay.insert(tk.END, "Warning! Not a valid maximum color range. " + \
+                                               "Use a dot (.) as decimal separator\n\n")
+                    return
+            else:
+                c0, c1 = float("NaN"), float("NaN")
             # Color map
             cm = self.colormaps.get() 
             # Color scale             
@@ -637,15 +647,21 @@ class Root(tk.Tk):
             self.numvars = self.numvars + 1    
             """ Input into variable field """
             self.varEntry.configure(state="normal")
-            self.varEntry.insert(0, str(self.numvars) + ". " + "KEY: " + en + \
-                             ", DESCRIPTION: " + lg + ", Y-MIN: " + c0 + ", Y-MAX: " + c1 + \
-                             ", COLORMAP: " + cm + ", Y-SCALE: " + self.scales[-1] + "      ")        
+            if isnan( c0 ) or isnan ( c1 ):
+                self.varEntry.insert(tk.END, str(self.numvars) + ". " + "KEY: " + en + \
+                                 ", DESCRIPTION: " + lg + \
+                                 ", COLORMAP: " + cm + ", Y-SCALE: " + self.scales[-1] + "      ")                        
+            else:
+                self.varEntry.insert(tk.END, str(self.numvars) + ". " + "KEY: " + en + \
+                                 ", DESCRIPTION: " + lg + ", Y-MIN: " + str(c0) + ", Y-MAX: " + str(c1) + \
+                                 ", COLORMAP: " + cm + ", Y-SCALE: " + self.scales[-1] + "      ")        
             self.varEntry.configure(state="disabled")
+            self.update(); self.varEntry.xview_moveto(1)            
             """ Append new selections """
             self.userkeys.append(en)
             self.descriptions.append(lg)
-            self.mincolran.append(float(c0))
-            self.maxcolran.append(float(c1))
+            self.mincolran.append(c0)
+            self.maxcolran.append(c1)
             self.colors.append(cm)   
         """ Clear fields """
         self.key.set("")
@@ -661,12 +677,13 @@ class Root(tk.Tk):
         self.timeEntry.configure(state="normal")
         if time0 and time1:
             if time0 != time1:                
-                self.timeEntry.insert(0, str(self.numtimes) + ". From " + time0 + " to " + time1)                
+                self.timeEntry.insert(tk.END, str(self.numtimes) + ". From " + time0 + " to " + time1 + "      ")                
             else:
-                self.timeEntry.insert(0,  str(self.numtimes) + ". Snapshot " + time0 + "      ")     
+                self.timeEntry.insert(tk.END,  str(self.numtimes) + ". Snapshot " + time0 + "      ")     
             self.t0.append(datetime.strptime(time0, "%Y-%m-%d %H:%M:%S"))
             self.t1.append(datetime.strptime(time1, "%Y-%m-%d %H:%M:%S"))           
-        self.timeEntry.configure(state="disabled")        
+        self.timeEntry.configure(state="disabled")    
+        self.update(); self.timeEntry.xview_moveto(1)
           
     def fileDialog(self):
         self.directory = filedialog.askdirectory()  
@@ -771,98 +788,98 @@ class Root(tk.Tk):
     def varStruct(self, choices=()):
         from itertools import islice
         var = {
-        "mean free surface":                  (("y", "x", "T"),       3, "mean sea surface height",                   "meter",         lambda x: x.mean(axis=2), ("zeta",),                 ("mean_free_surface",),             "linear", [-2, 2],      "jet", "real"), \
-        "minimum free surface":               (("y", "x", "T"),       3, "minimum sea surface height",                "meter",         lambda x: x.min(axis=2),  ("zeta",),                 ("minimum_free_surface",),          "linear", [-2, 2],      "jet", "real"), \
-        "maximum free surface":               (("y", "x", "T"),       3, "maximum sea surface height",                "meter",         lambda x: x.max(axis=2),  ("zeta",),                 ("maximum_free_surface",),          "linear", [-2, 2],      "jet", "real"), \
+        "mean free surface":                  (("y", "x", "T"),       3, "mean sea surface height",                   "meter",         lambda x: self.nanmean(x), ("zeta",),                 ("mean_free_surface",),             "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
+        "minimum free surface":               (("y", "x", "T"),       3, "minimum sea surface height",                "meter",         lambda x: min(x),          ("zeta",),                 ("minimum_free_surface",),          "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
+        "maximum free surface":               (("y", "x", "T"),       3, "maximum sea surface height",                "meter",         lambda x: max(x),          ("zeta",),                 ("maximum_free_surface",),          "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
                     
-        "average temperature":                (("y", "x", "z", "T"),  4, "mean potential temperature",                "Celsius",       lambda x: x.mean(axis=3), ("temp", "zeta"),          ("average_temperature",),           "linear", [5, 20],      "jet", "real"), \
-    	"minimum temperature":                (("y", "x", "z", "T"),  4, "minimum potential temperature",             "Celsius",       lambda x: x.min(axis=3),  ("temp", "zeta"),          ("minimum_temperature",),           "linear", [5, 20],      "jet", "real"), \
-    	"maximum temperature":                (("y", "x", "z", "T"),  4, "maximum potential temperature",             "Celsius",       lambda x: x.max(axis=3),  ("temp", "zeta"),          ("maximum_temperature",),           "linear", [5, 20],      "jet", "real"), \
+        "average temperature":                (("y", "x", "z", "T"),  4, "mean potential temperature",                "Celsius",       lambda x: self.nanmean(x), ("temp", "zeta"),          ("average_temperature",),           "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
+    	"minimum temperature":                (("y", "x", "z", "T"),  4, "minimum potential temperature",             "Celsius",       lambda x: min(x),          ("temp", "zeta"),          ("minimum_temperature",),           "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
+    	"maximum temperature":                (("y", "x", "z", "T"),  4, "maximum potential temperature",             "Celsius",       lambda x: max(x),          ("temp", "zeta"),          ("maximum_temperature",),           "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
         
-    	"average surface temperature":        (("y", "x", "T"),       3, "mean surface temperature",                  "Celsius",       lambda x: x.mean(axis=2), ("temp",),                 ("average_surface_temperature",),   "linear", [10, 20],     "jet", "real"), \
-    	"minimum surface temperature":        (("y", "x", "T"),       3, "minimum surface temperature",               "Celsius",       lambda x: x.min(axis=2),  ("temp",),                 ("minimum_surface_temperature",),   "linear", [10, 20],     "jet", "real"), \
-    	"maximum surface temperature":        (("y", "x", "T"),       3, "maximum surface temperature",               "Celsius",       lambda x: x.max(axis=2),  ("temp",),                 ("maximum_surface_temperature",),   "linear", [10, 20],     "jet", "real"), \
+    	"average surface temperature":        (("y", "x", "T"),       3, "mean surface temperature",                  "Celsius",       lambda x: self.nanmean(x), ("temp",),                 ("average_surface_temperature",),   "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"minimum surface temperature":        (("y", "x", "T"),       3, "minimum surface temperature",               "Celsius",       lambda x: min(x),          ("temp",),                 ("minimum_surface_temperature",),   "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"maximum surface temperature":        (("y", "x", "T"),       3, "maximum surface temperature",               "Celsius",       lambda x: max(x),          ("temp",),                 ("maximum_surface_temperature",),   "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
         
-    	"average bottom temperature":         (("y", "x", "T"),       3, "mean bottom potential temperature",         "Celsius",       lambda x: x.mean(axis=2), ("temp",),                 ("average_bottom_temperature",),    "linear", [2, 12],      "jet", "real"), \
-    	"minimum bottom temperature":         (("y", "x", "T"),       3, "minimum bottom potential temperature",      "Celsius",       lambda x: x.min(axis=2),  ("temp",),                 ("minimum_bottom_temperature",),    "linear", [2, 12],      "jet", "real"), \
-    	"maximum bottom temperature":         (("y", "x", "T"),       3, "maximum bottom potential temperature",      "Celsius",       lambda x: x.max(axis=2),  ("temp",),                 ("maximum_bottom_temperature",),    "linear", [2, 12],      "jet", "real"), \
-        
-        
-    	"average salinity":                   (("y", "x", "z", "T"),  4, "mean salinity",                             "",              lambda x: x.mean(axis=3), ("salt", "zeta"),          ("average_salinity",),              "linear", [34.5, 35.5], "jet", "real"), \
-    	"minimum salinity":                   (("y", "x", "z", "T"),  4, "minimum salinity",                          "",              lambda x: x.min(axis=3),  ("salt", "zeta"),          ("minimum_salinity",),              "linear", [34.5, 35.5], "jet", "real"), \
-    	"maximum salinity":                   (("y", "x", "z", "T"),  4, "maximum salinity",                          "",              lambda x: x.max(axis=3),  ("salt", "zeta"),          ("maximum_salinity",),              "linear", [34.5, 35.5], "jet", "real"), \
-        
-    	"average surface salinity":           (("y", "x", "T"),       3, "mean surface salinity",                     "",              lambda x: x.mean(axis=2), ("salt",),                 ("average_surface_salinity",),      "linear", [34.5, 35.5], "jet", "real"), \
-    	"minimum surface salinity":           (("y", "x", "T"),       3, "minimum surface salinity",                  "",              lambda x: x.min(axis=2),  ("salt",),                 ("minimum_surface_salinity",),      "linear", [34.5, 35.5], "jet", "real"), \
-    	"maximum surface salinity":           (("y", "x", "T"),       3, "maximum surface salinity",                  "",              lambda x: x.max(axis=2),  ("salt",),                 ("maximum_surface_salinity",),      "linear", [34.5, 35.5], "jet", "real"), \
-        
-    	"average bottom salinity":            (("y", "x", "T"),       3, "mean bottom salinity",                      "",              lambda x: x.mean(axis=2), ("salt",),                 ("average_bottom_salinity",),       "linear", [34.5, 35.5], "jet", "real"), \
-    	"minimum bottom salinity":            (("y", "x", "T"),       3, "minimum bottom salinity",                   "",              lambda x: x.min(axis=2),  ("salt",),                 ("minimum_bottom_salinity",),       "linear", [34.5, 35.5], "jet", "real"), \
-    	"maximum bottom salinity":            (("y", "x", "T"),       3, "maximum bottom salinity",                   "",              lambda x: x.max(axis=2),  ("salt",),                 ("maximum_bottom_salinity",),       "linear", [34.5, 35.5], "jet", "real"), \
+    	"average bottom temperature":         (("y", "x", "T"),       3, "mean bottom potential temperature",         "Celsius",       lambda x: self.nanmean(x), ("temp",),                 ("average_bottom_temperature",),    "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
+    	"minimum bottom temperature":         (("y", "x", "T"),       3, "minimum bottom potential temperature",      "Celsius",       lambda x: min(x),          ("temp",),                 ("minimum_bottom_temperature",),    "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
+    	"maximum bottom temperature":         (("y", "x", "T"),       3, "maximum bottom potential temperature",      "Celsius",       lambda x: max(x),          ("temp",),                 ("maximum_bottom_temperature",),    "linear", [float("NaN"), float("NaN")],      "jet", "real"), \
         
         
-    	"average density":                    (("y", "x", "z", "T"),  4, "EOS-80 mean density",                       "kg m-3",        lambda x: x.mean(axis=3), ("temp", "salt", "zeta"),  ("average_density",),               "linear", [24, 29],     "jet", "real"), \
-    	"minimum density":                    (("y", "x", "z", "T"),  4, "EOS-80 minimum density",                    "kg m-3",        lambda x: x.min(axis=3),  ("temp", "salt", "zeta"),  ("minimum_density",),               "linear", [24, 29],     "jet", "real"), \
-    	"maximum density":                    (("y", "x", "z", "T"),  4, "EOS-80 maximum density",                    "kg m-3",        lambda x: x.max(axis=3),  ("temp", "salt", "zeta"),  ("maximum_density",),               "linear", [24, 29],     "jet", "real"), \
+    	"average salinity":                   (("y", "x", "z", "T"),  4, "mean salinity",                             "",              lambda x: self.nanmean(x), ("salt", "zeta"),          ("average_salinity",),              "linear", [float("NaN"), float("NaN")], "jet", "real"), \
+    	"minimum salinity":                   (("y", "x", "z", "T"),  4, "minimum salinity",                          "",              lambda x: min(x),          ("salt", "zeta"),          ("minimum_salinity",),              "linear", [float("NaN"), float("NaN")], "jet", "real"), \
+    	"maximum salinity":                   (("y", "x", "z", "T"),  4, "maximum salinity",                          "",              lambda x: max(x),          ("salt", "zeta"),          ("maximum_salinity",),              "linear", [float("NaN"), float("NaN")], "jet", "real"), \
         
-    	"average surface density":            (("y", "x", "T"),       3, "EOS-80 mean surface density",               "kg m-3",        lambda x: x.mean(axis=2), ("temp", "salt", "zeta"),  ("average_surface_density",),       "linear", [24, 29],     "jet", "real"), \
-    	"minimum surface density":            (("y", "x", "T"),       3, "EOS-80 minimum surface density",            "kg m-3",        lambda x: x.min(axis=2),  ("temp", "salt", "zeta"),  ("minimum_surface_density",),       "linear", [24, 29],     "jet", "real"), \
-    	"maximum surface density":            (("y", "x", "T"),       3, "EOS-80 maximum surface density",            "kg m-3",        lambda x: x.max(axis=2),  ("temp", "salt", "zeta"),  ("maximum_surface_density",),       "linear", [24, 29],     "jet", "real"), \
+    	"average surface salinity":           (("y", "x", "T"),       3, "mean surface salinity",                     "",              lambda x: self.nanmean(x), ("salt",),                 ("average_surface_salinity",),      "linear", [float("NaN"), float("NaN")],"jet", "real"), \
+    	"minimum surface salinity":           (("y", "x", "T"),       3, "minimum surface salinity",                  "",              lambda x: min(x),          ("salt",),                 ("minimum_surface_salinity",),      "linear", [float("NaN"), float("NaN")], "jet", "real"), \
+    	"maximum surface salinity":           (("y", "x", "T"),       3, "maximum surface salinity",                  "",              lambda x: max(x),          ("salt",),                 ("maximum_surface_salinity",),      "linear", [float("NaN"), float("NaN")], "jet", "real"), \
         
-    	"average bottom density":             (("y", "x", "T"),       3, "EOS-80 mean bottom density",                "kg m-3",        lambda x: x.mean(axis=2), ("temp", "salt", "zeta"),  ("average_bottom_density",),        "linear", [24, 29],     "jet", "real"), \
-    	"minimum bottom density":             (("y", "x", "T"),       3, "EOS-80 minimum bottom density",             "kg m-3",        lambda x: x.min(axis=2),  ("temp", "salt", "zeta"),  ("minimum_bottom_density",),        "linear", [24, 29],     "jet", "real"), \
-    	"maximum bottom density":             (("y", "x", "T"),       3, "EOS-80 maximum bottom density",             "kg m-3",        lambda x: x.max(axis=2),  ("temp", "salt", "zeta"),  ("maximum_bottom_density",),        "linear", [24, 29],     "jet", "real"), \
+    	"average bottom salinity":            (("y", "x", "T"),       3, "mean bottom salinity",                      "",              lambda x: self.nanmean(x), ("salt",),                 ("average_bottom_salinity",),       "linear", [float("NaN"), float("NaN")], "jet", "real"), \
+    	"minimum bottom salinity":            (("y", "x", "T"),       3, "minimum bottom salinity",                   "",              lambda x: min(x),          ("salt",),                 ("minimum_bottom_salinity",),       "linear", [float("NaN"), float("NaN")], "jet", "real"), \
+    	"maximum bottom salinity":            (("y", "x", "T"),       3, "maximum bottom salinity",                   "",              lambda x: max(x),          ("salt",),                 ("maximum_bottom_salinity",),       "linear", [float("NaN"), float("NaN")], "jet", "real"), \
         
         
-        "average u":                          (("y", "x", "z", "T"),  4, "u-component of circulation (average)",      "cm s-1",        lambda x: x.mean(axis=3), ("u", "v", "zeta"),        ("average_u",),                     "linear", [-50, 50],    "bwr", "real"), \
-	    "minimum u":                          (("y", "x", "z", "T"),  4, "u-component of circulation (minimum)",      "cm s-1",        lambda x: x.min(axis=3),  ("u", "v", "zeta"),        ("minimum_u",),                     "linear", [-50, 50],    "bwr", "real"), \
-        "maximum u":                          (("y", "x", "z", "T"),  4, "u-component of circulation (maximum)",      "cm s-1",        lambda x: x.max(axis=3),  ("u", "v", "zeta"),        ("maximum_u",),                     "linear", [-50, 50],    "bwr", "real"), \
+    	"average density":                    (("y", "x", "z", "T"),  4, "EOS-80 mean density",                       "kg m-3",        lambda x: self.nanmean(x), ("temp", "salt", "zeta"),  ("average_density",),               "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"minimum density":                    (("y", "x", "z", "T"),  4, "EOS-80 minimum density",                    "kg m-3",        lambda x: min(x),          ("temp", "salt", "zeta"),  ("minimum_density",),               "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"maximum density":                    (("y", "x", "z", "T"),  4, "EOS-80 maximum density",                    "kg m-3",        lambda x: max(x),          ("temp", "salt", "zeta"),  ("maximum_density",),               "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
         
-        "average surface u":                  (("y", "x", "T"),       3, "surface u-component (average)",             "cm s-1",        lambda x: x.mean(axis=2), ("u", "v"),                ("average_surface_u",),             "linear", [-50, 50],    "bwr", "real"), \
-        "minimum surface u":                  (("y", "x", "T"),       3, "surface u-component (minimum)",             "cm s-1",        lambda x: x.min(axis=2),  ("u", "v"),                ("minimum_surface_u",),             "linear", [-50, 50],    "bwr", "real"), \
-        "maximum surface u":                  (("y", "x", "T"),       3, "surface u-component (maximum)",             "cm s-1",        lambda x: x.max(axis=2),  ("u", "v"),                ("maximum_surface_u",),             "linear", [-50, 50],    "bwr", "real"), \
+    	"average surface density":            (("y", "x", "T"),       3, "EOS-80 mean surface density",               "kg m-3",        lambda x: self.nanmean(x), ("temp", "salt", "zeta"),  ("average_surface_density",),       "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"minimum surface density":            (("y", "x", "T"),       3, "EOS-80 minimum surface density",            "kg m-3",        lambda x: min(x),          ("temp", "salt", "zeta"),  ("minimum_surface_density",),       "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"maximum surface density":            (("y", "x", "T"),       3, "EOS-80 maximum surface density",            "kg m-3",        lambda x: max(x),          ("temp", "salt", "zeta"),  ("maximum_surface_density",),       "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+        
+    	"average bottom density":             (("y", "x", "T"),       3, "EOS-80 mean bottom density",                "kg m-3",        lambda x: self.nanmean(x), ("temp", "salt", "zeta"),  ("average_bottom_density",),        "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"minimum bottom density":             (("y", "x", "T"),       3, "EOS-80 minimum bottom density",             "kg m-3",        lambda x: min(x),          ("temp", "salt", "zeta"),  ("minimum_bottom_density",),        "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"maximum bottom density":             (("y", "x", "T"),       3, "EOS-80 maximum bottom density",             "kg m-3",        lambda x: max(x),          ("temp", "salt", "zeta"),  ("maximum_bottom_density",),        "linear", [float("NaN"), float("NaN")],     "jet", "real"), \
+        
+        
+        "average u":                          (("y", "x", "z", "T"),  4, "u-component of circulation (average)",      "cm s-1",        lambda x: self.nanmean(x), ("u", "v", "zeta"),        ("average_u",),                     "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+	    "minimum u":                          (("y", "x", "z", "T"),  4, "u-component of circulation (minimum)",      "cm s-1",        lambda x: min(x),          ("u", "v", "zeta"),        ("minimum_u",),                     "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "maximum u":                          (("y", "x", "z", "T"),  4, "u-component of circulation (maximum)",      "cm s-1",        lambda x: max(x),          ("u", "v", "zeta"),        ("maximum_u",),                     "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        
+        "average surface u":                  (("y", "x", "T"),       3, "surface u-component (average)",             "cm s-1",        lambda x: self.nanmean(x), ("u", "v"),                ("average_surface_u",),             "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "minimum surface u":                  (("y", "x", "T"),       3, "surface u-component (minimum)",             "cm s-1",        lambda x: min(x),          ("u", "v"),                ("minimum_surface_u",),             "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "maximum surface u":                  (("y", "x", "T"),       3, "surface u-component (maximum)",             "cm s-1",        lambda x: max(x),          ("u", "v"),                ("maximum_surface_u",),             "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
  
-        "average bottom u":                   (("y", "x", "T"),       3, "bottom u-component (average)",              "cm s-1",        lambda x: x.mean(axis=2), ("u", "v"),                ("average_bottom_u",),              "linear", [-50, 50],    "bwr", "real"), \
-        "minimum bottom u":                   (("y", "x", "T"),       3, "bottom u-component (minimum)",              "cm s-1",        lambda x: x.min(axis=2),  ("u", "v"),                ("minimum_bottom_u",),              "linear", [-50, 50],    "bwr", "real"), \
-        "maximum bottom u":                   (("y", "x", "T"),       3, "bottom u-component (maximum)",              "cm s-1",        lambda x: x.max(axis=2),  ("u", "v"),                ("maximum_bottom_u",),              "linear", [-50, 50],    "bwr", "real"), \
+        "average bottom u":                   (("y", "x", "T"),       3, "bottom u-component (average)",              "cm s-1",        lambda x: self.nanmean(x), ("u", "v"),                ("average_bottom_u",),              "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "minimum bottom u":                   (("y", "x", "T"),       3, "bottom u-component (minimum)",              "cm s-1",        lambda x: min(x),          ("u", "v"),                ("minimum_bottom_u",),              "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "maximum bottom u":                   (("y", "x", "T"),       3, "bottom u-component (maximum)",              "cm s-1",        lambda x: max(x),          ("u", "v"),                ("maximum_bottom_u",),              "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
 	
     
-        "average v":                          (("y", "x", "z", "T"),  4, "v-component of circulation (average)",      "cm s-1",        lambda x: x.mean(axis=3), ("u", "v", "zeta"),        ("average_v",),                     "linear", [-50, 50],    "bwr", "real"), \
-	    "minimum v":                          (("y", "x", "z", "T"),  4, "v-component of circulation (minimum)",      "cm s-1",        lambda x: x.min(axis=3),  ("u", "v", "zeta"),        ("minimum_v",),                     "linear", [-50, 50],    "bwr", "real"), \
-        "maximum v":                          (("y", "x", "z", "T"),  4, "v-component of circulation (maximum)",      "cm s-1",        lambda x: x.max(axis=3),  ("u", "v", "zeta"),        ("maximum_v",),                     "linear", [-50, 50],    "bwr", "real"), \
+        "average v":                          (("y", "x", "z", "T"),  4, "v-component of circulation (average)",      "cm s-1",        lambda x: self.nanmean(x), ("u", "v", "zeta"),        ("average_v",),                     "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+	    "minimum v":                          (("y", "x", "z", "T"),  4, "v-component of circulation (minimum)",      "cm s-1",        lambda x: min(x),          ("u", "v", "zeta"),        ("minimum_v",),                     "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "maximum v":                          (("y", "x", "z", "T"),  4, "v-component of circulation (maximum)",      "cm s-1",        lambda x: max(x),          ("u", "v", "zeta"),        ("maximum_v",),                     "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
         
-        "average surface v":                  (("y", "x", "T"),       3, "surface v-component (average)",             "cm s-1",        lambda x: x.mean(axis=2), ("u", "v"),                ("average_surface_v",),             "linear", [-50, 50],    "bwr", "real"), \
-        "minimum surface v":                  (("y", "x", "T"),       3, "surface v-component (minimum)",             "cm s-1",        lambda x: x.min(axis=2),  ("u", "v"),                ("minimum_surface_v",),             "linear", [-50, 50],    "bwr", "real"), \
-        "maximum surface v":                  (("y", "x", "T"),       3, "surface v-component (maximum)",             "cm s-1",        lambda x: x.max(axis=2),  ("u", "v"),                ("maximum_surface_v",),             "linear", [-50, 50],    "bwr", "real"), \
+        "average surface v":                  (("y", "x", "T"),       3, "surface v-component (average)",             "cm s-1",        lambda x: self.nanmean(x), ("u", "v"),                ("average_surface_v",),             "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "minimum surface v":                  (("y", "x", "T"),       3, "surface v-component (minimum)",             "cm s-1",        lambda x: min(x),          ("u", "v"),                ("minimum_surface_v",),             "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "maximum surface v":                  (("y", "x", "T"),       3, "surface v-component (maximum)",             "cm s-1",        lambda x: max(x),          ("u", "v"),                ("maximum_surface_v",),             "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
  
-        "average bottom v":                   (("y", "x", "T"),       3, "bottom v-component (average)",              "cm s-1",        lambda x: x.mean(axis=2), ("u", "v"),                ("average_bottom_v",),              "linear", [-50, 50],    "bwr", "real"), \
-        "minimum bottom v":                   (("y", "x", "T"),       3, "bottom v-component (minimum)",              "cm s-1",        lambda x: x.min(axis=2),  ("u", "v"),                ("minimum_bottom_v",),              "linear", [-50, 50],    "bwr", "real"), \
-        "maximum bottom v":                   (("y", "x", "T"),       3, "bottom v-component (maximum)",              "cm s-1",        lambda x: x.max(axis=2),  ("u", "v"),                ("maximum_bottom_v",),              "linear", [-50, 50],    "bwr", "real"), \
+        "average bottom v":                   (("y", "x", "T"),       3, "bottom v-component (average)",              "cm s-1",        lambda x: self.nanmean(x), ("u", "v"),                ("average_bottom_v",),              "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "minimum bottom v":                   (("y", "x", "T"),       3, "bottom v-component (minimum)",              "cm s-1",        lambda x: min(x),          ("u", "v"),                ("minimum_bottom_v",),              "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
+        "maximum bottom v":                   (("y", "x", "T"),       3, "bottom v-component (maximum)",              "cm s-1",        lambda x: max(x),          ("u", "v"),                ("maximum_bottom_v",),              "linear", [float("NaN"), float("NaN")],    "bwr", "real"), \
                 
         
-        "average velocity":                      (("y", "x", "z", "T"),  4, "mean circulation velocity",                    "cm s-1",        lambda x: x.mean(axis=3), ("u", "v", "zeta"),  ("average_velocity_u", "average_velocity_v"),                 "linear", [0, 50],      "jet", "complex"), \
-    	"maximum velocity":                      (("y", "x", "z", "T"),  4, "maximum circulation velocity",                 "cm s-1",        lambda x: x.max(axis=3),  ("u", "v", "zeta"),  ("maximum_magnitude", "maximum_direction"),                   "linear", [0, 50],      "jet", "complex"), \
+        "average velocity":                      (("y", "x", "z", "T"),  4, "mean circulation velocity",              "cm s-1",        lambda x: self.nanmean(x), ("u", "v", "zeta"),        ("average_velocity_u", "average_velocity_v"),                 "linear", [float("NaN"), float("NaN")],      "jet", "complex"), \
+    	"maximum velocity":                      (("y", "x", "z", "T"),  4, "maximum circulation velocity",           "cm s-1",        lambda x: max(x),          ("u", "v", "zeta"),        ("maximum_magnitude", "maximum_direction"),                   "linear", [float("NaN"), float("NaN")],      "jet", "complex"), \
             
-        "average surface velocity":              (("y", "x", "T"),       3, "mean surface circulation velocity",            "cm s-1",        lambda x: x.mean(axis=2), ("u", "v"),          ("average_surface_velocity_u", "average_surface_velocity_v"), "linear", [0, 50],      "jet", "complex"), \
-        "maximum surface velocity":              (("y", "x", "T"),       3, "maximum surface circulation velocity",         "cm s-1",        lambda x: x.max(axis=2),  ("u", "v"),          ("maximum_surface_magnitude", "maximum_surface_direction"),   "linear", [0, 50],      "jet", "complex"), \
+        "average surface velocity":              (("y", "x", "T"),       3, "mean surface circulation velocity",      "cm s-1",        lambda x: self.nanmean(x), ("u", "v"),                ("average_surface_velocity_u", "average_surface_velocity_v"), "linear", [float("NaN"), float("NaN")],      "jet", "complex"), \
+        "maximum surface velocity":              (("y", "x", "T"),       3, "maximum surface circulation velocity",   "cm s-1",        lambda x: max(x),          ("u", "v"),                ("maximum_surface_magnitude", "maximum_surface_direction"),   "linear", [float("NaN"), float("NaN")],      "jet", "complex"), \
     
-        "average bottom velocity":               (("y", "x", "T"),       3, "mean bottom circulation velocity",             "cm s-1",        lambda x: x.mean(axis=2), ("u", "v"),          ("average_bottom_velocity_u", "average_bottom_velocity_v"),   "linear", [0, 50],      "jet", "complex"), \
-        "maximum bottom velocity":               (("y", "x", "T"),       3, "maximum bottom circulation velocity",          "cm s-1",        lambda x: x.max(axis=2),  ("u", "v"),          ("maximum_bottom_magnitude", "maximum_bottom_direction"),     "linear", [0, 50],      "jet", "complex"), \
-    
-    
-    	"average potential energy deficit":   (("y", "x", "T"),       3, "mean Potential Energy Deficit",             "kg m-1 s-2",    lambda x: x.mean(axis=2), ("temp", "salt", "zeta"),  ("average_potential_energy_deficit",),                        "log",    [1, 200],     "jet", "real"), \
-    	"minimum potential energy deficit":   (("y", "x", "T"),       3, "minimum Potential Energy Deficit",          "kg m-1 s-2",    lambda x: x.min(axis=2),  ("temp", "salt", "zeta"),  ("minimum_potential_energy_deficit",),                        "log",    [1, 200],     "jet", "real"), \
-    	"maximum potential energy deficit":   (("y", "x", "T"),       3, "maximum Potential Energy Deficit",          "kg m-1 s-2",    lambda x: x.max(axis=2),  ("temp", "salt", "zeta"),  ("maximum_potential_energy_deficit",),                        "log",    [1, 200],     "jet", "real"), \
+        "average bottom velocity":               (("y", "x", "T"),       3, "mean bottom circulation velocity",       "cm s-1",        lambda x: self.nanmean(x), ("u", "v"),                ("average_bottom_velocity_u", "average_bottom_velocity_v"),   "linear", [float("NaN"), float("NaN")],      "jet", "complex"), \
+        "maximum bottom velocity":               (("y", "x", "T"),       3, "maximum bottom circulation velocity",    "cm s-1",        lambda x: max(x),          ("u", "v"),                ("maximum_bottom_magnitude", "maximum_bottom_direction"),     "linear", [float("NaN"), float("NaN")],      "jet", "complex"), \
     
     
-    	"average mixed layer depth":          (("y", "x", "T"),       3, "mean Mixed Layer Depth",                    "meter",         lambda x: x.mean(axis=2), ("temp", "zeta"),          ("average_mixed_layer_depth",),                               "linear", [-100, 0],    "jet", "real"), \
-    	"deepest mixed layer depth":          (("y", "x", "T"),       3, "deepest Mixed Layer Depth",                 "meter",         lambda x: x.min(axis=2),  ("temp", "zeta"),          ("deepest_mixed_layer_depth",),                               "linear", [-100, 0],    "jet", "real"), \
-    	"shallowest mixed layer depth":       (("y", "x", "T"),       3, "shallowest Mixed Layer Depth",              "meter",         lambda x: x.max(axis=2),  ("temp", "zeta"),          ("shallowest_mixed_layer_depth",),                            "linear", [-100, 0],    "jet", "real"), \
+    	"average potential energy deficit":   (("y", "x", "T"),       3, "mean Potential Energy Deficit",             "kg m-1 s-2",    lambda x: self.nanmean(x), ("temp", "salt", "zeta"),  ("average_potential_energy_deficit",),                        "log",    [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"minimum potential energy deficit":   (("y", "x", "T"),       3, "minimum Potential Energy Deficit",          "kg m-1 s-2",    lambda x: min(x),          ("temp", "salt", "zeta"),  ("minimum_potential_energy_deficit",),                        "log",    [float("NaN"), float("NaN")],     "jet", "real"), \
+    	"maximum potential energy deficit":   (("y", "x", "T"),       3, "maximum Potential Energy Deficit",          "kg m-1 s-2",    lambda x: max(x),          ("temp", "salt", "zeta"),  ("maximum_potential_energy_deficit",),                        "log",    [float("NaN"), float("NaN")],     "jet", "real"), \
     
     
-    	"SST-based front index (average)":    (("y", "x", "T"),       3, "SST - Front Index (average)",               "",   lambda x: x.mean(axis=2), ("temp",),                            ("average_front_index",),                                     "linear", [0, 5],       "jet", "real"), \
-    	"SST-based front index (minimum)":    (("y", "x", "T"),       3, "SST - Front Index (minimum)",               "",   lambda x: x.min(axis=2),  ("temp",),                            ("minimum_front_index",),                                     "linear", [0, 5],       "jet", "real"), \
-    	"SST-based front index (maximum)":    (("y", "x", "T"),       3, "SST - Front Index (maximum)",               "",   lambda x: x.max(axis=2),  ("temp",),                            ("maximum_front_index",),                                     "linear", [0, 5],       "jet", "real"), \
+    	"average mixed layer depth":          (("y", "x", "T"),       3, "mean Mixed Layer Depth",                    "meter",         lambda x: self.nanmean(x), ("temp", "zeta"),          ("average_mixed_layer_depth",),                               "linear", [float("NaN"), float("NaN")],    "jet", "real"), \
+    	"deepest mixed layer depth":          (("y", "x", "T"),       3, "deepest Mixed Layer Depth",                 "meter",         lambda x: min(x),          ("temp", "zeta"),          ("deepest_mixed_layer_depth",),                               "linear", [float("NaN"), float("NaN")],    "jet", "real"), \
+    	"shallowest mixed layer depth":       (("y", "x", "T"),       3, "shallowest Mixed Layer Depth",              "meter",         lambda x: max(x),          ("temp", "zeta"),          ("shallowest_mixed_layer_depth",),                            "linear", [float("NaN"), float("NaN")],    "jet", "real"), \
+    
+    
+    	"SST-based front index (average)":    (("y", "x", "T"),       3, "SST - Front Index (average)",               "",              lambda x: self.nanmean(x), ("temp",),                 ("average_front_index",),                                     "linear", [float("NaN"), float("NaN")],       "jet", "real"), \
+    	"SST-based front index (minimum)":    (("y", "x", "T"),       3, "SST - Front Index (minimum)",               "",              lambda x: min(x),          ("temp",),                 ("minimum_front_index",),                                     "linear", [float("NaN"), float("NaN")],       "jet", "real"), \
+    	"SST-based front index (maximum)":    (("y", "x", "T"),       3, "SST - Front Index (maximum)",               "",              lambda x: max(x),          ("temp",),                 ("maximum_front_index",),                                     "linear", [float("NaN"), float("NaN")],       "jet", "real"), \
         }
             
         # Subset from user's choices
@@ -891,6 +908,11 @@ class Root(tk.Tk):
         """ Length of time dimension """
         T = len(T0)        
         
+        """ Depth """
+        z = list(dict.fromkeys([-abs(z) for z in z]))        
+        # Number of user-selected z-levels
+        N = len(z)        
+        
         """ Set defaults """
         # Default output variables
         var = self.varStruct(self.choices)
@@ -898,6 +920,12 @@ class Root(tk.Tk):
         """ Processing input variables """
         if userkey:
             var = userkey
+        if not z:
+            new = {}
+            for entry in var:
+                if ( var[entry][1] ) < 4: new[entry] = var[entry] 
+            var = new
+        if not var: return boolean
         
         """ Extract fields """
         # Keyword
@@ -908,8 +936,6 @@ class Root(tk.Tk):
         long = [item[2] for item in var.values()]
         # Units
         units = [item[3] for item in var.values()]
-        # Method
-        func = [item[4] for item in var.values()]
         # ROMS associated variables
         roms = list(dict.fromkeys([item for group in [item[5] for item in var.values()] for item in group]))
         # Array
@@ -922,11 +948,6 @@ class Root(tk.Tk):
         colorMap = [item[9] for item in var.values()]
         # Type
         tipo = [item[10] for item in var.values()]
-        
-        """ Depth """
-        z = list(dict.fromkeys([-abs(z) for z in z]))        
-        # Number of user-selected z-levels
-        N = len(z)
         
         """ Show summary """
         self.summaryDisplay.delete("1.0", tk.END)
@@ -1007,10 +1028,14 @@ class Root(tk.Tk):
                     TIME.append(time)
                     imn += 1
         
+        """ Fix time """
+        # There must be, at least, one time period
         if len(TIME) < 1: 
             self.summaryDisplay.delete("1.0", tk.END)
             self.summaryDisplay.insert(tk.END, "Warning! You must select at least one time period.\n\n")
             return 0
+        # Remove duplicates
+        TIME.sort(); TIME = list(TIME for TIME,_ in groupby(TIME))
                     
         """ Display processing information """
         self.summaryDisplay.insert(tk.END, "\n TIME: The following time intervals will be considered:\n")
@@ -1027,16 +1052,20 @@ class Root(tk.Tk):
             nb, sb = sb, nb
         if wb > eb: 
             eb, wb = wb, eb
-        self.summaryDisplay.insert(tk.END, "\n BOUNDARIES: Processing will be limited to the following boundaries:\n\n" + \
+        self.summaryDisplay.insert(tk.END, "\n BOUNDARIES: Processing will be limited to the following boundaries:\n" + \
                                    "   NORTH " + str(nb) + " j-grid" + \
                                    "   SOUTH " + str(sb) + " j-grid" + \
                                    "   EAST "  + str(abs(eb)) + " i-grid" + \
                                    "   WEST "  + str(abs(wb)) + " i-grid\n")        
         nb += 1; eb += 1
-        self.summaryDisplay.insert(tk.END, "\n VARIABLES: The following variables will be included:\n\n")
+        self.summaryDisplay.insert(tk.END, "\n VARIABLES: The following variables will be included:\n")
         for i1, i4, i5, i6 in zip(key, colorScale, colorMap, colorAxis):
-            string = "   '" + i1 + "'. Plot (if chosen) using " + i4 + " scale, '"  \
-            + i5 + "' map and axis range from " + str(i6[0]) + " to " + str(i6[1]) + "\n\n" 
+            if isnan(i6[0]):
+                add_string = ""
+            else:
+                add_string = " Axis range from " +  str(i6[0]) + " to " + str(i6[1]) + "."
+            string = "   '" + i1 + "'. Plot (if chosen) using " + i4 + " scale and '"  \
+            + i5 + "' map." + add_string + "\n\n" 
             self.summaryDisplay.insert(tk.END, string)
         
         if makeplot:
@@ -1124,7 +1153,7 @@ class Root(tk.Tk):
                 return boolean        
             
             os.remove(cdf)
-        print("STEP 0/" + str(1 + makeplot) + ": Building NetCDF...\n")
+        print("STEP 0/" + str(1 + makeplot) + ": Building NetCDF...\n", file=fid)
         self.summaryDisplay.delete("1.0", tk.END)
         self.summaryDisplay.insert(tk.END, "STEP 0/" + str(1 + makeplot) + ": Building NetCDF...\n\n")
         self.update(); self.summaryDisplay.yview_moveto(1)
@@ -1132,13 +1161,14 @@ class Root(tk.Tk):
         o = netCDF4.Dataset(cdf, "a")
         
         """ MAIN LOOP """   
-        print("\n\nSTEP 1/" + str(1 + makeplot) + ": Loop over time...\n")
+        print("\n\nSTEP 1/" + str(1 + makeplot) + ": Loop over time...\n", file=fid)
         self.summaryDisplay.insert(tk.END, "\n\nSTEP 1/" + str(1 + makeplot) + ": Loop over time...\n\n")
         self.update(); self.summaryDisplay.yview_moveto(1)
+        write_control = []
         for item in TIME:
             print("   Processing from " + \
                            item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
-                           item[-1].strftime("%d-%b-%Y %H:%M") + "...")
+                           item[-1].strftime("%d-%b-%Y %H:%M") + "...", file=fid)
             self.summaryDisplay.insert(tk.END, "   Processing from " + \
                            item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
                            item[-1].strftime("%d-%b-%Y %H:%M") + "...\n")
@@ -1283,7 +1313,7 @@ class Root(tk.Tk):
                
             COUNT = 0                
             for i in item:  
-                print("\n" + i.strftime("%d-%b-%Y %H:%M"))
+                print("\n" + i.strftime("%d-%b-%Y %H:%M"), file=fid)
                 self.summaryDisplay.insert(tk.END, "\n" + i.strftime("%d-%b-%Y %H:%M") + "\n")
                 self.update(); self.summaryDisplay.yview_moveto(1)
                 """ Get input file name matching date """
@@ -1308,76 +1338,78 @@ class Root(tk.Tk):
                 if ("temp" in roms or "salt" in roms):
                     try:
                         F = netCDF4.Dataset(f, "r")
-                        print("   File " + f + " opened successfully for reading tracers.")
+                        print("   File " + f + " opened successfully for reading tracers.", file=fid)
                         self.summaryDisplay.insert(tk.END, "   File " + f + " opened successfully for reading tracers.\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                     except FileNotFoundError:
-                        print("   File " + f + " not found. Skipping...")
+                        print("   File " + f + " not found. Skipping...\n", file=fid)
                         self.summaryDisplay.insert(tk.END, "   File " + f + " not found. Skipping...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)                    
                         continue
                 if ("u" in roms or "v" in roms or "zeta" in roms):    
                     try:
                         G = netCDF4.Dataset(g, "r")
-                        print("   File " + g + " opened successfully for reading momentum.")
+                        print("   File " + g + " opened successfully for reading momentum.", file=fid)
                         self.summaryDisplay.insert(tk.END, "   File " + g + " opened successfully for reading momentum.\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)                    
                     except FileNotFoundError:
-                        print("   File " + g + " not found. Skipping...")
+                        print("   File " + g + " not found. Skipping...\n", file=fid)
                         self.summaryDisplay.insert(tk.END, "   File " + g + " not found. Skipping...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)                     
                         continue                
                 
                 COUNT += 1
                 """ Dealing with time... """
+                # Convert current loop index (i) according to the offset in config file
+                ioffset = (i - self.offset).total_seconds()                
                 # Read time from ocean file
                 if ("temp" in roms or "salt" in roms):
                     time_file = F.variables["ocean_time"][:].tolist()
-                else:
+                    # Find reading time index
+                    tit = time_file.index(ioffset)                      
+                if ("u" in roms or "v" in roms or "zeta" in roms):                 
                     time_file = G.variables["ocean_time"][:].tolist()
-                # Convert current loop index (i) according to the offset in config file
-                ioffset = (i - self.offset).total_seconds()
-                # Find reading time index
-                ti = time_file.index(ioffset)
+                    # Find reading time index
+                    tim = time_file.index(ioffset)                         
                 
                 # Read variables
                 for variable in roms:
                     if variable == "temp":
-                        print("   Reading temperature...")
+                        print("   Reading temperature...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Reading temperature...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        temp = np.squeeze(F.variables["temp"][ti, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
+                        temp = np.squeeze(F.variables["temp"][tit, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
                     elif variable == "salt":
-                        print("   Reading salinity...")
+                        print("   Reading salinity...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Reading salinity...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        salt = np.squeeze(F.variables["salt"][ti, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
+                        salt = np.squeeze(F.variables["salt"][tit, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
                     elif variable == "zeta":
-                        print("   Reading free-surface...")
+                        print("   Reading free-surface...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Reading free-surface...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        zeta = np.squeeze(G.variables["zeta"][ti, sb : nb, wb : eb]).filled(fill_value=np.nan)
+                        zeta = np.squeeze(G.variables["zeta"][tim, sb : nb, wb : eb]).filled(fill_value=np.nan)
                         # Compute depth at RHO points
-                        print("   Computing depth at RHO-points...")
+                        print("   Computing depth at RHO-points...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing depth at RHO-points...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         z_rho = self.zlevs(Vtransform, Vstretching, H, zeta, theta_s, theta_b, hc, Np, "r")    
                         # Compute depth at W points
-                        print("   Computing depth at W-points...")
+                        print("   Computing depth at W-points...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing depth at W-points...\n")   
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         z_w = self.zlevs(Vtransform, Vstretching, H, zeta, theta_s, theta_b, hc, Np, "w")
                     elif variable == "u":
-                        print("   Reading u...")
+                        print("   Reading u...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Reading u...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        u = 100 * self.u2rho(np.squeeze(G.variables["u"][ti, :, :, :])).filled(fill_value=np.nan)
+                        u = 100 * self.u2rho(np.squeeze(G.variables["u"][tim, :, :, :])).filled(fill_value=np.nan)
                         u = u[:, sb : nb, wb : eb]                    
                     elif variable == "v":
-                        print("   Reading v...")
+                        print("   Reading v...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Reading v...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        v = 100 * self.v2rho(np.squeeze(G.variables["v"][ti, :, :, :])).filled(fill_value=np.nan)
+                        v = 100 * self.v2rho(np.squeeze(G.variables["v"][tim, :, :, :])).filled(fill_value=np.nan)
                         v = v[:, sb : nb, wb : eb]
                 
                 if ("temp" in roms or "salt" in roms):
@@ -1407,7 +1439,7 @@ class Root(tk.Tk):
                         
                     elif en == "average temperature":                    
                         if "temp_z" not in locals():
-                            print("   Temperature z-slicing...")
+                            print("   Temperature z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Temperature z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             temp_z = self.zslice(z_rho, temp, z, H, zeta) 
@@ -1416,7 +1448,7 @@ class Root(tk.Tk):
                              
                     elif en == "minimum temperature":
                         if "temp_z" not in locals():
-                            print("   Temperature z-slicing...")
+                            print("   Temperature z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Temperature z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             temp_z = self.zslice(z_rho, temp, z, H, zeta)                    
@@ -1425,12 +1457,12 @@ class Root(tk.Tk):
                     
                     elif en == "maximum temperature":
                         if "temp_z" not in locals():
-                            print("   Temperature z-slicing...")
+                            print("   Temperature z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Temperature z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             temp_z = self.zslice(z_rho, temp, z, H, zeta)                    
                         maximum_temperature = self.ProcessPeriod(maximum_temperature, \
-                                                                 temp_z, COUNT, "min")[0]
+                                                                 temp_z, COUNT, "max")[0]
                     
                     elif en == "average surface temperature":
                         average_surface_temperature = self.ProcessPeriod(average_surface_temperature, \
@@ -1458,7 +1490,7 @@ class Root(tk.Tk):
                     
                     elif en == "average salinity":                    
                         if "salt_z" not in locals():
-                            print("   Salinity z-slicing...")
+                            print("   Salinity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Salinity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             salt_z = self.zslice(z_rho, salt, z, H, zeta) 
@@ -1467,7 +1499,7 @@ class Root(tk.Tk):
                              
                     elif en == "minimum salinity":
                         if "salt_z" not in locals():
-                            print("   Salinity z-slicing...")
+                            print("   Salinity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Salinity z-slicing...\n")[0]
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             salt_z = self.zslice(z_rho, salt, z, H, zeta)                    
@@ -1476,12 +1508,12 @@ class Root(tk.Tk):
                     
                     elif en == "maximum salinity":
                         if "salt_z" not in locals():
-                            print("   Salinity z-slicing...")
+                            print("   Salinity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Salinity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             salt_z = self.zslice(z_rho, salt, z, H, zeta)                    
                         maximum_salinity = self.ProcessPeriod(maximum_salinity, \
-                                                                 salt_z, COUNT, "min")[0]
+                                                                 salt_z, COUNT, "max")[0]
                     
                     elif en == "average surface salinity":
                         average_surface_salinity = self.ProcessPeriod(average_surface_salinity, \
@@ -1509,12 +1541,12 @@ class Root(tk.Tk):
                     
                     elif en == "average density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         if "dens_z" not in locals():
-                            print("   Density z-slicing...")
+                            print("   Density z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Density z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             dens_z = self.zslice(z_rho, dens, z, H, zeta)
@@ -1523,12 +1555,12 @@ class Root(tk.Tk):
                     
                     elif en == "minimum density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         if "dens_z" not in locals():
-                            print("   Density z-slicing...")
+                            print("   Density z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Density z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             dens_z = self.zslice(z_rho, dens, z, H, zeta)
@@ -1537,12 +1569,12 @@ class Root(tk.Tk):
                     
                     elif en == "maximum density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         if "dens_z" not in locals():
-                            print("   Density z-slicing...")
+                            print("   Density z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Density z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             dens_z = self.zslice(z_rho, dens, z, H, zeta)
@@ -1551,62 +1583,62 @@ class Root(tk.Tk):
                                         
                     elif en == "average surface density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         average_surface_density = self.ProcessPeriod(average_surface_density, \
                                                                          dens[-1, :, :], COUNT, "avg")[0] 
                     
                     elif en == "minimum surface density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         minimum_surface_density = self.ProcessPeriod(minimum_surface_density, \
                                                                          dens[-1, :, :], COUNT, "min")[0] 
                     
                     elif en == "maximum surface density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         maximum_surface_density = self.ProcessPeriod(maximum_surface_density, \
                                                                          dens[-1, :, :], COUNT, "max")[0] 
                     
                     elif en == "average bottom density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         average_bottom_density = self.ProcessPeriod(average_bottom_density, \
                                                                          dens[0, :, :], COUNT, "avg")[0]                         
                   
                     
                     elif en == "minimum bottom density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         minimum_bottom_density = self.ProcessPeriod(minimum_bottom_density, \
                                                                          dens[0, :, :], COUNT, "min")[0]                                                
                     
                     elif en == "maximum bottom density":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         maximum_bottom_density = self.ProcessPeriod(maximum_bottom_density, \
                                                                          dens[0, :, :], COUNT, "max")[0]                            
                     
                     elif en == "average u":
                         if "u_z" not in locals():
-                            print("   u-velocity z-slicing...")
+                            print("   u-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             u_z = self.zslice(z_rho, u, z, H, zeta)                    
@@ -1615,7 +1647,7 @@ class Root(tk.Tk):
                              
                     elif en == "minimum u":
                         if "u_z" not in locals():
-                            print("   u-velocity z-slicing...")
+                            print("   u-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             u_z = self.zslice(z_rho, u, z, H, zeta)      
@@ -1624,7 +1656,7 @@ class Root(tk.Tk):
                     
                     elif en == "maximum u":
                         if "u_z" not in locals():
-                            print("   u-velocity z-slicing...")
+                            print("   u-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             u_z = self.zslice(z_rho, u, z, H, zeta)    
@@ -1657,7 +1689,7 @@ class Root(tk.Tk):
                     
                     elif en == "average v":
                         if "v_z" not in locals():
-                            print("   v-velocity z-slicing...")
+                            print("   v-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             v_z = self.zslice(z_rho, v, z, H, zeta)                    
@@ -1666,7 +1698,7 @@ class Root(tk.Tk):
                              
                     elif en == "minimum v":
                         if "v_z" not in locals():
-                            print("   v-velocity z-slicing...")
+                            print("   v-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             v_z = self.zslice(z_rho, v, z, H, zeta)      
@@ -1675,7 +1707,7 @@ class Root(tk.Tk):
                     
                     elif en == "maximum v":
                         if "v_z" not in locals():
-                            print("   v-velocity z-slicing...")
+                            print("   v-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             v_z = self.zslice(z_rho, v, z, H, zeta)    
@@ -1708,14 +1740,14 @@ class Root(tk.Tk):
                         
                     elif en == "average velocity":
                         if "u_z" not in locals():
-                            print("   u-velocity z-slicing...")
+                            print("   u-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             u_z = self.zslice(z_rho, u, z, H, zeta)
                         average_velocity_u = self.ProcessPeriod(average_velocity_u, \
                                                                  u_z, COUNT, "avg")[0] 
                         if "v_z" not in locals():
-                            print("   v-velocity z-slicing...")
+                            print("   v-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             v_z = self.zslice(z_rho, v, z, H, zeta)   
@@ -1724,12 +1756,12 @@ class Root(tk.Tk):
                     
                     elif en == "maximum velocity":
                         if "u_z" not in locals():
-                            print("   u-velocity z-slicing...")
+                            print("   u-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             u_z = self.zslice(z_rho, u, z, H, zeta)
                         if "v_z" not in locals():
-                            print("   v-velocity z-slicing...")
+                            print("   v-velocity z-slicing...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             v_z = self.zslice(z_rho, v, z, H, zeta)                                           
@@ -1763,12 +1795,12 @@ class Root(tk.Tk):
                     
                     elif en == "average potential energy deficit":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         if "PED" not in locals():
-                            print("   Computing PED...")
+                            print("   Computing PED...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing PED...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             PED = self.potential_energy_deficit(dens, z_rho, z_w, zeta, 200)
@@ -1777,12 +1809,12 @@ class Root(tk.Tk):
                     
                     elif en == "minimum potential energy deficit":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         if "PED" not in locals():
-                            print("   Computing PED...")
+                            print("   Computing PED...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing PED...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             PED = self.potential_energy_deficit(dens, z_rho, z_w, zeta, 200)
@@ -1791,12 +1823,12 @@ class Root(tk.Tk):
                     
                     elif en == "maximum potential energy deficit":
                         if "dens" not in locals():
-                            print("   Computing density...")
+                            print("   Computing density...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
-                            dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                            dens = self.rho_eos(temp, salt, -z_rho) 
                         if "PED" not in locals():
-                            print("   Computing PED...")
+                            print("   Computing PED...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing PED...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             PED = self.potential_energy_deficit(dens, z_rho, z_w, zeta, 200)
@@ -1805,7 +1837,7 @@ class Root(tk.Tk):
                     
                     elif en == "average mixed layer depth":
                         if "MLD" not in locals():
-                            print("   Computing MLD...")
+                            print("   Computing MLD...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing MLD...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             MLD = self.mixed_layer_depth(z_rho, temp, H, mask)
@@ -1814,7 +1846,7 @@ class Root(tk.Tk):
                     
                     elif en == "deepest mixed layer depth":
                         if "MLD" not in locals():
-                            print("   Computing MLD...")
+                            print("   Computing MLD...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing MLD...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             MLD = self.mixed_layer_depth(z_rho, temp, H, mask)
@@ -1823,7 +1855,7 @@ class Root(tk.Tk):
                     
                     elif en == "shallowest mixed layer depth":
                         if "MLD" not in locals():
-                            print("   Computing MLD...")
+                            print("   Computing MLD...", file=fid)
                             self.summaryDisplay.insert(tk.END, "   Computing MLD...\n")
                             self.update(); self.summaryDisplay.yview_moveto(1)
                             MLD = self.mixed_layer_depth(z_rho, temp, H, mask)
@@ -1832,15 +1864,15 @@ class Root(tk.Tk):
                     
                     elif en == "SST-based front index (average)":
                         average_front_index = self.ProcessPeriod(average_front_index, \
-                                                                 self.sobel(temp[-1, :, :], mask), COUNT, "avg")
+                                                                 self.sobel(temp[-1, :, :], mask), COUNT, "avg")[0]
                                             
                     elif en == "SST-based front index (minimum)":
                         minimum_front_index = self.ProcessPeriod(minimum_front_index, \
-                                                                 self.sobel(temp[-1, :, :], mask), COUNT, "min")
+                                                                 self.sobel(temp[-1, :, :], mask), COUNT, "min")[0]
                     
                     elif en == "SST-based front index (maximum)":
                         maximum_front_index = self.ProcessPeriod(maximum_front_index, \
-                                                                 self.sobel(temp[-1, :, :], mask), COUNT, "max")
+                                                                 self.sobel(temp[-1, :, :], mask), COUNT, "max")[0]
                         
                     else:                              
                         raise ValueError("Unavailable variable") 
@@ -1854,51 +1886,61 @@ class Root(tk.Tk):
                 if "v_z"    in locals(): del v_z
                 if "PED"    in locals(): del PED
                 if "MLD"    in locals(): del MLD
+            
+            if COUNT:                     
+                """ Write output arrays """
+                print("\n   Writing from " + \
+                               item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
+                               item[-1].strftime("%d-%b-%Y %H:%M") + "...\n\n", file=fid)
+                self.summaryDisplay.insert(tk.END, "\n   Writing from " + \
+                               item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
+                               item[-1].strftime("%d-%b-%Y %H:%M") + "...\n\n")
+                self.update(); self.summaryDisplay.yview_moveto(1)            
+                for en, nd, ar, ty in zip(key, ndim, array, tipo):
+                    if ty == "real":
+                        if nd == 3:
+                            o.variables[en][:, :, TIME.index(item)] = eval(ar[0])
+                        elif nd ==4:
+                            o.variables[en][:, :, :, TIME.index(item)] = eval(ar[0])
+                    else:
+                        if nd == 3:
+                            if en[0:3] == "ave":
+                                U = eval(ar[0]); V = eval(ar[1])
+                                # Write magnitude
+                                o.variables[en][:, :, TIME.index(item), 0] = (U**2 + V**2)**.5
+                                # Write direction
+                                o.variables[en][:, :, TIME.index(item), 1] = np.degrees(np.arctan2(V, U))
+                            elif en[0:3] == "max":
+                                # Write magnitude
+                                o.variables[en][:, :, TIME.index(item), 0] = eval(ar[0])
+                                # Write direction
+                                o.variables[en][:, :, TIME.index(item), 1] = eval(ar[1])
+                        elif nd == 4:
+                            if en[0:3] == "ave":
+                                U = eval(ar[0]); V = eval(ar[1])
+                                # Write magnitude
+                                o.variables[en][:, :, :, TIME.index(item), 0] = (U**2 + V**2)**.5
+                                # Write direction
+                                o.variables[en][:, :, :, TIME.index(item), 1] = np.degrees(np.arctan2(V, U))
+                            elif en[0:3] == "max":
+                                # Write magnitude
+                                o.variables[en][:, :, :, TIME.index(item), 0] = eval(ar[0])
+                                # Write direction
+                                o.variables[en][:, :, :, TIME.index(item), 1] = eval(ar[1]) 
+                                
+                write_control.append(True)
                         
-            """ Write output arrays """
-            print("\n   Writing from " + \
-                           item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
-                           item[-1].strftime("%d-%b-%Y %H:%M") + "...\n\n")
-            self.summaryDisplay.insert(tk.END, "\n   Writing from " + \
-                           item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
-                           item[-1].strftime("%d-%b-%Y %H:%M") + "...\n\n")
-            self.update(); self.summaryDisplay.yview_moveto(1)            
-            for en, nd, ar, ty in zip(key, ndim, array, tipo):
-                if ty == "real":
-                    if nd == 3:
-                        o.variables[en][:, :, TIME.index(item)] = eval(ar[0])
-                    elif nd ==4:
-                        o.variables[en][:, :, :, TIME.index(item)] = eval(ar[0])
-                else:
-                    if nd == 3:
-                        if en[0:3] == "ave":
-                            U = eval(ar[0]); V = eval(ar[1])
-                            # Write magnitude
-                            o.variables[en][:, :, TIME.index(item), 0] = (U**2 + V**2)**.5
-                            # Write direction
-                            o.variables[en][:, :, TIME.index(item), 1] = np.degrees(np.arctan2(V, U))
-                        elif en[0:3] == "max":
-                            # Write magnitude
-                            o.variables[en][:, :, TIME.index(item), 0] = eval(ar[0])
-                            # Write direction
-                            o.variables[en][:, :, TIME.index(item), 1] = eval(ar[1])
-                    elif nd == 4:
-                        if en[0:3] == "ave":
-                            U = eval(ar[0]); V = eval(ar[1])
-                            # Write magnitude
-                            o.variables[en][:, :, :, TIME.index(item), 0] = (U**2 + V**2)**.5
-                            # Write direction
-                            o.variables[en][:, :, :, TIME.index(item), 1] = np.degrees(np.arctan2(V, U))
-                        elif en[0:3] == "max":
-                            # Write magnitude
-                            o.variables[en][:, :, :, TIME.index(item), 0] = eval(ar[0])
-                            # Write direction
-                            o.variables[en][:, :, :, TIME.index(item), 1] = eval(ar[1])                            
-                        
-        o.close()
-        o = netCDF4.Dataset(cdf, "r")
+            else:
+                write_control.append(False)
+                
+        o.close()        
               
         if makeplot:
+            # Assert            
+            assert len(TIME) == len(write_control),"Oops! Number of writing records is not equal to number of user-requeted periods"
+            # Open output NetCDF for reading
+            o = netCDF4.Dataset(cdf, "r")
+            # Load required libraries
             import matplotlib.pyplot as plt
             import matplotlib.ticker as mticker 
             import matplotlib.colors as colors
@@ -1906,124 +1948,65 @@ class Root(tk.Tk):
             # Create new directory
             if not os.path.isdir(self.dir + "/IMAGES"):
                 os.mkdir(self.dir + "/IMAGES")
-            print("\nSTEP 2/" + str(1 + makeplot) + ": Plotting...\n")
+            print("\nSTEP 2/" + str(1 + makeplot) + ": Plotting...\n", file=fid)
             self.summaryDisplay.insert(tk.END, "\n\nSTEP 2/" + str(1 + makeplot) + ": Plotting...\n\n")
             self.update(); self.summaryDisplay.yview_moveto(1)
             for en, nd, lg, un, cs, ca, mc, ty in zip(key, ndim, long, units, colorScale, colorAxis, colorMap, tipo):
-                print("   " + en)
+                if isnan(ca[0]): ca = False
+                print("   " + en, file=fid)
                 self.summaryDisplay.insert(tk.END, "   " + en + "\n")
                 self.update(); self.summaryDisplay.yview_moveto(1)
                 var_i = o.variables[en][:]
                     
                 if nd == 3:
                     for period in TIME:
-                        # New axes
-                        fig = plt.figure(figsize=(9.45, 9.45*R))
-                        ax = fig.add_subplot(111)
-                        ax.set_aspect("equal") 
-                        
-                        # x-axis
-                        xtickslocs = [round(100*i)/100 for i in np.linspace(floor(x.min()), ceil(x.max()), 6)]
-                        ax.xaxis.set_major_locator(mticker.FixedLocator(xtickslocs))                        
-                        ax.set_xlim(left=x.min(), right=x.max()) 
-                        ax.set_xticklabels([( str(abs(i)) + "°W" ) for i in xtickslocs], fontsize=12)                        
-                        ax.xaxis.labelpad = 15
-                        
-                        # y-axis
-                        ytickslocs = [round(100*i)/100 for i in np.linspace(floor(y.min()), ceil(y.max()), 6)]
-                        ax.yaxis.set_major_locator(mticker.FixedLocator(ytickslocs))                                              
-                        ax.set_ylim(bottom=y.min(), top=y.max())
-                        ax.set_yticklabels([( str(i) + "°N" ) for i in ytickslocs], fontsize=12)
-                        
-                        # Draw coastline                    
-                        self.drawshore(ax, self.coast_x, self.coast_y)
-                        
-                        # Draw colormap
-                        if ( ty == "complex" ):                            
-                            # Get magnitude
-                            magn = var_i[:, :, TIME.index(period), 0]
-                            # Get direction
-                            dire = var_i[:, :, TIME.index(period), 1]
-                            # Get (u, v)
-                            u = np.cos(np.deg2rad(dire))
-                            v = np.sin(np.deg2rad(dire))  
-                            # Draw quiver plot
-                            ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], scale=40, zorder=1)                            
-                        else:
-                            # Get magnitude
-                            magn = var_i[:, :, TIME.index(period)]
-                        
-                        if cs == "linear":
-                            h = ax.pcolor(x, y, magn, cmap=mc, vmin=ca[0], vmax=ca[1], zorder=0)
-                        else:
-                            h = ax.pcolor(x, y, magn, cmap=mc, norm=colors.LogNorm(vmin=ca[0], vmax=ca[1]), zorder=0)    
-                                
-                        # Set colorbar
-                        cb = fig.colorbar(h)
-                        cb.set_label(un, fontsize=16)
-                        # cb.set_ticks(colorTicks)
-                        cb.ax.tick_params(labelsize=16)
-                        
-                        # Set title                         
-                        ax.set_title(lg, fontsize=12, pad=15)
-                        if (period[0] == period[-1]):
-                            ax.set_xlabel(period[0].strftime("%d-%b-%Y %H:%M"), fontsize=12)
-                        else:                                     
-                            ax.set_xlabel("from  " + period[0].strftime("%d-%b-%Y %H:%M") + \
-                                      "  to  " + period[-1].strftime("%d-%b-%Y %H:%M"))
-                            
-                        plt.tight_layout()
-                        # Save figure
-                        plt.savefig(self.dir + "./IMAGES/" + en + "_" + period[0].strftime("%Y%m%d%H") + \
-                                    "_" +  period[-1].strftime("%Y%m%d%H") + "." + fmt, dpi=144)
-                        
-                        # Close figure
-                        plt.close()
-                     
-                        
-                elif nd == 4:
-                    for period in TIME:
-                        for level in z:
+                        if write_control[TIME.index(period)]:
                             # New axes
                             fig = plt.figure(figsize=(9.45, 9.45*R))
                             ax = fig.add_subplot(111)
                             ax.set_aspect("equal") 
-                        
+                            
                             # x-axis
                             xtickslocs = [round(100*i)/100 for i in np.linspace(floor(x.min()), ceil(x.max()), 6)]
-                            ax.xaxis.set_major_locator(mticker.FixedLocator(xtickslocs))                            
+                            ax.xaxis.set_major_locator(mticker.FixedLocator(xtickslocs))                        
                             ax.set_xlim(left=x.min(), right=x.max()) 
-                            ax.set_xticklabels([( str(abs(i)) + "°W" ) for i in xtickslocs], fontsize=12)  
+                            ax.set_xticklabels([( str(abs(i)) + "°W" ) for i in xtickslocs], fontsize=12)                        
                             ax.xaxis.labelpad = 15
-                        
+                            
                             # y-axis
                             ytickslocs = [round(100*i)/100 for i in np.linspace(floor(y.min()), ceil(y.max()), 6)]
-                            ax.yaxis.set_major_locator(mticker.FixedLocator(ytickslocs))                            
+                            ax.yaxis.set_major_locator(mticker.FixedLocator(ytickslocs))                                              
                             ax.set_ylim(bottom=y.min(), top=y.max())
-                            ax.set_yticklabels([( str(i) + "°W" ) for i in ytickslocs], fontsize=12)                    
+                            ax.set_yticklabels([( str(i) + "°N" ) for i in ytickslocs], fontsize=12)
                             
                             # Draw coastline                    
                             self.drawshore(ax, self.coast_x, self.coast_y)
                             
-                            if ( ty == "complex" ):                                
+                            # Draw colormap
+                            if ( ty == "complex" ):                            
                                 # Get magnitude
-                                magn = var_i[:, :, z.index(level), TIME.index(period), 0]
+                                magn = var_i[:, :, TIME.index(period), 0]
                                 # Get direction
-                                dire = var_i[:, :, z.index(level), TIME.index(period), 1]
+                                dire = var_i[:, :, TIME.index(period), 1]
                                 # Get (u, v)
                                 u = np.cos(np.deg2rad(dire))
                                 v = np.sin(np.deg2rad(dire))  
                                 # Draw quiver plot
-                                ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], scale=40, zorder=1)
-                                
+                                ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], scale=40, zorder=1)                            
                             else:
                                 # Get magnitude
-                                magn = var_i[:, :, z.index(level), TIME.index(period)]
-                        
+                                magn = var_i[:, :, TIME.index(period)]
+                            
                             if cs == "linear":
-                                h = ax.pcolor(x, y, magn, cmap=mc, vmin=ca[0], vmax=ca[1], zorder=0)
+                                if ca:
+                                    h = ax.pcolor(x, y, magn, cmap=mc, vmin=ca[0], vmax=ca[1], zorder=0)
+                                else:
+                                    h = ax.pcolor(x, y, magn, cmap=mc, zorder=0)
                             else:
-                                h = ax.pcolor(x, y, magn, cmap=mc, norm=colors.LogNorm(vmin=ca[0], vmax=ca[1]), zorder=0)                                                               
+                                if ca:
+                                    h = ax.pcolor(x, y, magn, cmap=mc, norm=colors.LogNorm(vmin=ca[0], vmax=ca[1]), zorder=0)    
+                                else:
+                                    h = ax.pcolor(x, y, magn, cmap=mc, norm=colors.LogNorm(), zorder=0)    
                                     
                             # Set colorbar
                             cb = fig.colorbar(h)
@@ -2031,23 +2014,98 @@ class Root(tk.Tk):
                             # cb.set_ticks(colorTicks)
                             cb.ax.tick_params(labelsize=16)
                             
-                            # Set title 
+                            # Set title                         
                             ax.set_title(lg, fontsize=12, pad=15)
                             if (period[0] == period[-1]):
-                                ax.set_xlabel(period[0].strftime("%d-%b-%Y %H:%M") + " Z = " + str(int(-level)) + " m", fontsize=12)
-                            else:
+                                ax.set_xlabel(period[0].strftime("%d-%b-%Y %H:%M"), fontsize=12)
+                            else:                                     
                                 ax.set_xlabel("from  " + period[0].strftime("%d-%b-%Y %H:%M") + \
-                                          "  to  " + period[-1].strftime("%d-%b-%Y %H:%M") + \
-                                          " Z = " + str(int(-level)) + " m", fontsize=12)
+                                          "  to  " + period[-1].strftime("%d-%b-%Y %H:%M"))
                                 
                             plt.tight_layout()
                             # Save figure
                             plt.savefig(self.dir + "./IMAGES/" + en + "_" + period[0].strftime("%Y%m%d%H") + \
-                                        "_" +  period[-1].strftime("%Y%m%d%H") + "_Z = " + str(int(-level)) + "." + fmt, dpi=144)
+                                        "_" +  period[-1].strftime("%Y%m%d%H") + "." + fmt, dpi=144)
                             
                             # Close figure
-                            plt.close()                
-        o.close()
+                            plt.close()
+                     
+                        
+                elif nd == 4:
+                    for period in TIME:
+                        if write_control[TIME.index(period)]:
+                            for level in z:
+                                # New axes
+                                fig = plt.figure(figsize=(9.45, 9.45*R))
+                                ax = fig.add_subplot(111)
+                                ax.set_aspect("equal") 
+                            
+                                # x-axis
+                                xtickslocs = [round(100*i)/100 for i in np.linspace(floor(x.min()), ceil(x.max()), 6)]
+                                ax.xaxis.set_major_locator(mticker.FixedLocator(xtickslocs))                            
+                                ax.set_xlim(left=x.min(), right=x.max()) 
+                                ax.set_xticklabels([( str(abs(i)) + "°W" ) for i in xtickslocs], fontsize=12)  
+                                ax.xaxis.labelpad = 15
+                            
+                                # y-axis
+                                ytickslocs = [round(100*i)/100 for i in np.linspace(floor(y.min()), ceil(y.max()), 6)]
+                                ax.yaxis.set_major_locator(mticker.FixedLocator(ytickslocs))                            
+                                ax.set_ylim(bottom=y.min(), top=y.max())
+                                ax.set_yticklabels([( str(i) + "°W" ) for i in ytickslocs], fontsize=12)                    
+                                
+                                # Draw coastline                    
+                                self.drawshore(ax, self.coast_x, self.coast_y)
+                                
+                                if ( ty == "complex" ):                                
+                                    # Get magnitude
+                                    magn = var_i[:, :, z.index(level), TIME.index(period), 0]
+                                    # Get direction
+                                    dire = var_i[:, :, z.index(level), TIME.index(period), 1]
+                                    # Get (u, v)
+                                    u = np.cos(np.deg2rad(dire))
+                                    v = np.sin(np.deg2rad(dire))  
+                                    # Draw quiver plot
+                                    ax.quiver(x[::SP,::SP], y[::SP,::SP], u[::SP,::SP], v[::SP,::SP], scale=40, zorder=1)
+                                    
+                                else:
+                                    # Get magnitude
+                                    magn = var_i[:, :, z.index(level), TIME.index(period)]
+                            
+                                if cs == "linear":
+                                    if ca:
+                                        h = ax.pcolor(x, y, magn, cmap=mc, vmin=ca[0], vmax=ca[1], zorder=0)
+                                    else:
+                                        h = ax.pcolor(x, y, magn, cmap=mc, zorder=0)
+                                else:
+                                    if ca:
+                                        h = ax.pcolor(x, y, magn, cmap=mc, norm=colors.LogNorm(vmin=ca[0], vmax=ca[1]), zorder=0)                                                               
+                                    else:
+                                        h = ax.pcolor(x, y, magn, cmap=mc, norm=colors.LogNorm(), zorder=0)                                                               
+                                        
+                                # Set colorbar
+                                cb = fig.colorbar(h)
+                                cb.set_label(un, fontsize=16)
+                                # cb.set_ticks(colorTicks)
+                                cb.ax.tick_params(labelsize=16)
+                                
+                                # Set title                             
+                                ax.set_title(lg + " at " + str(-level) + " m depth", fontsize=12, pad=15)
+                                if (period[0] == period[-1]):
+                                    ax.set_xlabel(period[0].strftime("%d-%b-%Y %H:%M") + " Z = " + str(-level) + " m", fontsize=12)
+                                else:
+                                    ax.set_xlabel("from  " + period[0].strftime("%d-%b-%Y %H:%M") + \
+                                              "  to  " + period[-1].strftime("%d-%b-%Y %H:%M") + \
+                                              " Z = " + str(-level) + " m", fontsize=12)
+                                    
+                                plt.tight_layout()
+                                # Save figure
+                                plt.savefig(self.dir + "./IMAGES/" + en + "_" + period[0].strftime("%Y%m%d%H") + \
+                                            "_" +  period[-1].strftime("%Y%m%d%H") + "_Z = " + str(-level) + "." + fmt, dpi=144)
+                                
+                                # Close figure
+                                plt.close()                
+            o.close()
+            
         return boolean
     
     def timeseries(self, cdf, z, T0, T1, \
@@ -2065,6 +2123,11 @@ class Root(tk.Tk):
         """ Length of time dimension """
         T = len(T0)        
         
+        """ Depth """
+        z = list(dict.fromkeys([-abs(z) for z in z]))        
+        # Number of user-selected z-levels
+        N = len(z)        
+        
         """ Set defaults """
         # Default output variables
         var = self.varStruct(self.choices)
@@ -2072,6 +2135,12 @@ class Root(tk.Tk):
         """ Processing input variables """
         if userkey:
             var = userkey
+        if not z:
+            new = {}
+            for entry in var:
+                if ( var[entry][1] ) < 4: new[entry] = var[entry] 
+            var = new
+        if not var: return boolean
         
         """ Extract fields """
         # Keyword
@@ -2082,8 +2151,6 @@ class Root(tk.Tk):
         long = [item[2] for item in var.values()]
         # Units
         units = [item[3] for item in var.values()]
-        # Method
-        func = [item[4] for item in var.values()]
         # ROMS associated variables
         roms = list(dict.fromkeys([item for group in [item[5] for item in var.values()] for item in group]))
         # Array
@@ -2096,11 +2163,6 @@ class Root(tk.Tk):
         colorMap = [item[9] for item in var.values()]
         # Type
         tipo = [item[10] for item in var.values()]
-        
-        """ Depth """
-        z = list(dict.fromkeys([-abs(z) for z in z]))        
-        # Number of user-selected z-levels
-        N = len(z)
         
         """ Show summary """
         self.summaryDisplay.delete("1.0", tk.END)
@@ -2181,10 +2243,15 @@ class Root(tk.Tk):
                     TIME.append(time)
                     imn += 1
         
+        """ Fix time """
+        # There must be, at least, one time period
         if len(TIME) < 1: 
             self.summaryDisplay.delete("1.0", tk.END)
             self.summaryDisplay.insert(tk.END, "Warning! You must select at least one time period.\n\n")
             return 0
+        # Remove duplicates
+        TIME.sort(); TIME = list(TIME for TIME,_ in groupby(TIME))
+        
                     
         """ Display processing information """
         self.summaryDisplay.insert(tk.END, "\n TIME: The following time intervals will be considered:\n")
@@ -2201,16 +2268,20 @@ class Root(tk.Tk):
             nb, sb = sb, nb
         if wb > eb: 
             eb, wb = wb, eb
-        self.summaryDisplay.insert(tk.END, "\n BOUNDARIES: Processing will be limited to the following boundaries:\n\n" + \
+        self.summaryDisplay.insert(tk.END, "\n BOUNDARIES: Processing will be limited to the following boundaries:\n" + \
                                    "   NORTH " + str(nb) + " j-grid" + \
                                    "   SOUTH " + str(sb) + " j-grid" + \
                                    "   EAST "  + str(abs(eb)) + " i-grid" + \
                                    "   WEST "  + str(abs(wb)) + " igrid\n")        
         nb += 1; eb += 1
-        self.summaryDisplay.insert(tk.END, "\n VARIABLES: The following variables will be included:\n\n")
+        self.summaryDisplay.insert(tk.END, "\n VARIABLES: The following variables will be included:\n")
         for i1, i4, i5, i6 in zip(key, colorScale, colorMap, colorAxis):
-            string = "   '" + i1 + "'. Plot (if chosen) using " + i4 + " scale, '"  \
-            + i5 + "' map and axis range from " + str(i6[0]) + " to " + str(i6[1]) + "\n\n" 
+            if isnan(i6[0]):
+                add_string = ""
+            else:
+                add_string = " Axis range from " +  str(i6[0]) + " to " + str(i6[1]) + "."
+            string = "   '" + i1 + "'. Plot (if chosen) using " + i4 + " scale and '"  \
+            + i5 + "' map." + add_string + "\n\n" 
             self.summaryDisplay.insert(tk.END, string)
         
         if makeplot:
@@ -2303,21 +2374,32 @@ class Root(tk.Tk):
                 return boolean        
             
             os.remove(cdf)
-        print("STEP 0/" + str(1 + makeplot) + ": Building NetCDF...\n")
+        print("STEP 0/" + str(2 + makeplot) + ": Building NetCDF...\n", file=fid)
         self.summaryDisplay.delete("1.0", tk.END)
-        self.summaryDisplay.insert(tk.END, "STEP 0/" + str(1 + makeplot) + ": Building NetCDF...\n\n")
+        self.summaryDisplay.insert(tk.END, "STEP 0/" + str(2 + makeplot) + ": Building NetCDF...\n\n")
         self.update(); self.summaryDisplay.yview_moveto(1)
-        self.cdfseries(cdf, (nb, sb, eb, wb), N, T, z, time, self.offset, var)        
+        self.cdfseries(cdf, (nb, sb, eb, wb), N, z, T0, T1, self.offset, var)        
         o = netCDF4.Dataset(cdf, "a")        
         
         f.close()  
+        
+        """ Create output dictionary (it will store spatial averages) """
+        oDict = {}
+        for en, nd, ty in zip(key, ndim, tipo):
+            oDict[en] = [[[]], [[]]]
+            if nd == 4:
+                for i in range(N-1):
+                    for j in range(2):
+                        oDict[en][j].append([])                                
+            if ty == "real":
+                del oDict[en][-1]                
           
         """ MAIN LOOP """     
-        print("\nSTEP 1/" + str(1 + makeplot) + ": Loop over time...\n")
+        print("\nSTEP 1/" + str(2 + makeplot) + ": Loop over time...\n", file=fid)
         self.summaryDisplay.insert(tk.END, "\n\nSTEP 1/" + str(2 + makeplot) + ": Loop over time...\n\n")
         self.update()
         for item in time:
-            print("\n" + item.strftime("%d-%b-%Y %H:%M"))            
+            print("\n" + item.strftime("%d-%b-%Y %H:%M"), file=fid)            
             self.summaryDisplay.insert(tk.END, "\n" + item.strftime("%d-%b-%Y %H:%M") + "\n")
             self.update(); self.summaryDisplay.yview_moveto(1)
             
@@ -2345,75 +2427,87 @@ class Root(tk.Tk):
             if ("temp" in roms or "salt" in roms):
                 try:
                     F = netCDF4.Dataset(f, "r")
-                    print("   File " + f + " opened successfully for reading tracers.")
+                    print("   File " + f + " opened successfully for reading tracers.", file=fid)
                     self.summaryDisplay.insert(tk.END, "   File " + f + " opened successfully for reading tracers.\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)
                 except FileNotFoundError:
-                    print("   File " + f + " not found. Skipping...")
+                    print("   File " + f + " not found. Skipping...\n", file=fid)
                     self.summaryDisplay.insert(tk.END, "   File " + f + " not found. Skipping...\n")
-                    self.update(); self.summaryDisplay.yview_moveto(1)                    
+                    self.update(); self.summaryDisplay.yview_moveto(1)  
+                    # Enter missing value
+                    for en in key:
+                        for i in oDict[en]:
+                            for j in i:
+                                j.append(float("nan"))
                     continue
             if ("u" in roms or "v" in roms or "zeta" in roms):
                 try:
                     G = netCDF4.Dataset(g, "r")
-                    print("   File " + g + " opened successfully for reading momentum.")
+                    print("   File " + g + " opened successfully for reading momentum.", file=fid)
                     self.summaryDisplay.insert(tk.END, "   File " + g + " opened successfully for reading momentum.\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)                    
                 except FileNotFoundError:
-                    print("   File " + g + " not found. Skipping...")
+                    print("   File " + g + " not found. Skipping...\n", file=fid)
                     self.summaryDisplay.insert(tk.END, "   File " + g + " not found. Skipping...\n")
-                    self.update(); self.summaryDisplay.yview_moveto(1)                     
+                    self.update(); self.summaryDisplay.yview_moveto(1)   
+                    # Enter missing value
+                    for en in key:
+                        for i in oDict[en]:
+                            for j in i:
+                                j.append(float("nan"))                                       
                     continue   
                 
             """ Dealing with time... """
+            # Convert current loop index (item) according to the offset in config file
+            ioffset = (item - self.offset).total_seconds()            
             # Read time from ocean file
             if ("temp" in roms or "salt" in roms):
                 time_file = F.variables["ocean_time"][:].tolist()
-            else:
+                # Find reading time index
+                tit = time_file.index(ioffset)                                
+            if ("u" in roms or "v" in roms or "zeta" in roms):            
                 time_file = G.variables["ocean_time"][:].tolist()
-            # Convert current loop index (item) according to the offset in config file
-            ioffset = (item - self.offset).total_seconds()
-            # Find reading time index
-            ti = time_file.index(ioffset)
+                # Find reading time index
+                tim = time_file.index(ioffset)      
             
             # Read variables
             for variable in roms:
                 if variable == "temp":
-                    print("   Reading temperature...")
+                    print("   Reading temperature...", file=fid)
                     self.summaryDisplay.insert(tk.END, "   Reading temperature...\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)
-                    temp = np.squeeze(F.variables["temp"][ti, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
+                    temp = np.squeeze(F.variables["temp"][tit, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
                 elif variable == "salt":
-                    print("   Reading salinity...")
+                    print("   Reading salinity...", file=fid)
                     self.summaryDisplay.insert(tk.END, "   Reading salinity...\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)
-                    salt = np.squeeze(F.variables["salt"][ti, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
+                    salt = np.squeeze(F.variables["salt"][tit, :, sb : nb, wb : eb]).filled(fill_value=np.nan)
                 elif variable == "zeta":
-                    print("   Reading free-surface...")
+                    print("   Reading free-surface...", file=fid)
                     self.summaryDisplay.insert(tk.END, "   Reading free-surface...\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)
-                    zeta = np.squeeze(G.variables["zeta"][ti, sb : nb, wb : eb]).filled(fill_value=np.nan)
+                    zeta = np.squeeze(G.variables["zeta"][tim, sb : nb, wb : eb]).filled(fill_value=np.nan)
                     # Compute depth at RHO points
-                    print("   Computing depth at RHO-points...")
+                    print("   Computing depth at RHO-points...", file=fid)
                     self.summaryDisplay.insert(tk.END, "   Computing depth at RHO-points...\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)
                     z_rho = self.zlevs(Vtransform, Vstretching, H, zeta, theta_s, theta_b, hc, Np, "r")    
                     # Compute depth at W points
-                    print("   Computing depth at W-points...")
+                    print("   Computing depth at W-points...", file=fid)
                     self.summaryDisplay.insert(tk.END, "   Computing depth at W-points...\n")   
                     self.update(); self.summaryDisplay.yview_moveto(1)
                     z_w = self.zlevs(Vtransform, Vstretching, H, zeta, theta_s, theta_b, hc, Np, "w")
                 elif variable == "u":
-                    print("   Reading u...")
+                    print("   Reading u...", file=fid)
                     self.summaryDisplay.insert(tk.END, "   Reading u...\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)
-                    u = 100 * self.u2rho(np.squeeze(G.variables["u"][ti, :, :, :])).filled(fill_value=np.nan)
+                    u = 100 * self.u2rho(np.squeeze(G.variables["u"][tim, :, :, :])).filled(fill_value=np.nan)
                     u = u[:, sb : nb, wb : eb]
                 elif variable == "v":
-                    print("   Reading v...")
+                    print("   Reading v...", file=fid)
                     self.summaryDisplay.insert(tk.END, "   Reading v...\n")
                     self.update(); self.summaryDisplay.yview_moveto(1)
-                    v = 100 * self.v2rho(np.squeeze(G.variables["v"][ti, :, :, :])).filled(fill_value=np.nan)
+                    v = 100 * self.v2rho(np.squeeze(G.variables["v"][tim, :, :, :])).filled(fill_value=np.nan)
                     v = v[:, sb : nb, wb : eb]
                    
             if ("temp" in roms or "salt" in roms):
@@ -2431,494 +2525,419 @@ class Root(tk.Tk):
             # Compute variables
             for en in key:
                 if en == "mean free surface":
-                    o.variables[en][time.index(item)] = zeta.mean()
+                    oDict[en][0][0].append(np.nanmean(zeta))                    
                 
                 elif en == "minimum free surface":
-                    o.variables[en][time.index(item)] = zeta.min()
+                    oDict[en][0][0].append(np.nanmin(zeta))                    
                 
                 elif en == "maximum free surface":
-                    o.variables[en][time.index(item)] = zeta.max()
+                    oDict[en][0][0].append(np.nanmax(zeta))
                     
                 elif en == "average temperature":                    
                     if "temp_z" not in locals():
-                        print("   Temperature z-slicing...")
+                        print("   Temperature z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Temperature z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         temp_z = self.zslice(z_rho, temp, z, H, zeta)                    
-                    for lvl in list(range(N)):
-                         value = temp_z[:, :, lvl].mean()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value
+                    for lvl in list(range(N)):      
+                        oDict[en][0][lvl].append(np.nanmean(temp_z[:, :, lvl]))                         
                          
                 elif en == "minimum temperature":
                     if "temp_z" not in locals():
-                        print("   Temperature z-slicing...")
+                        print("   Temperature z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Temperature z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         temp_z = self.zslice(z_rho, temp, z, H, zeta)                    
-                    for lvl in list(range(N)):
-                         value = temp_z[:, :, lvl].min()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value                    
+                    for lvl in list(range(N)):             
+                        oDict[en][0][lvl].append(np.nanmin(temp_z[:, :, lvl]))                         
                 
                 elif en == "maximum temperature":
                     if "temp_z" not in locals():
-                        print("   Temperature z-slicing...")
+                        print("   Temperature z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Temperature z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         temp_z = self.zslice(z_rho, temp, z, H, zeta)                    
                     for lvl in list(range(N)):
-                         value = temp_z[:, :, lvl].max()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value
+                        oDict[en][0][lvl].append(np.nanmax(temp_z[:, :, lvl]))                         
                 
                 elif en == "average surface temperature":
-                    o.variables[en][time.index(item)] = temp[-1, :, :].mean()
+                    oDict[en][0][0].append(np.nanmean(temp[-1, :, :]))                    
                     
                 elif en == "minimum surface temperature":
-                    o.variables[en][time.index(item)] = temp[-1, :, :].min()
+                    oDict[en][0][0].append(np.nanmin(temp[-1, :, :]))                    
                     
                 elif en == "maximum surface temperature":
-                    o.variables[en][time.index(item)] = temp[-1, :, :].max()
-                
+                    oDict[en][0][0].append(np.nanmax(temp[-1, :, :]))
+                                    
                 elif en == "average bottom temperature":
-                    o.variables[en][time.index(item)] = temp[0, :, :].mean()
+                    oDict[en][0][0].append(np.nanmean(temp[0, :, :]))                    
                 
                 elif en == "minimum bottom temperature":
-                    o.variables[en][time.index(item)] = temp[0, :, :].min()
+                    oDict[en][0][0].append(np.nanmin(temp[0, :, :]))                    
                 
                 elif en == "maximum bottom temperature":
-                    o.variables[en][time.index(item)] = temp[0, :, :].max()
+                    oDict[en][0][0].append(np.nanmax(temp[0, :, :]))                    
                 
                 elif en == "average salinity":
                     if "salt_z" not in locals():
-                        print("   Salinity z-slicing...")
+                        print("   Salinity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Salinity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         salt_z = self.zslice(z_rho, salt, z, H, zeta)                    
-                    for lvl in list(range(N)):
-                         value = salt_z[:, :, lvl].mean()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value
+                    for lvl in list(range(N)):    
+                        oDict[en][0][lvl].append(np.nanmean(salt_z[:, :, lvl]))                         
                 
                 elif en == "minimum salinity":
                     if "salt_z" not in locals():
-                        print("   Salinity z-slicing...")
+                        print("   Salinity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Salinity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         salt_z = self.zslice(z_rho, salt, z, H, zeta)                    
-                    for lvl in list(range(N)):
-                         value = salt_z[:, :, lvl].min()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value
+                    for lvl in list(range(N)):  
+                        oDict[en][0][lvl].append(np.nanmin(salt_z[:, :, lvl]))                         
                 
                 elif en == "maximum salinity":
                     if "salt_z" not in locals():
-                        print("   Salinity z-slicing...")
+                        print("   Salinity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Salinity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         salt_z = self.zslice(z_rho, salt, z, H, zeta)                    
                     for lvl in list(range(N)):
-                         value = salt_z[:, :, lvl].max()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value
+                        oDict[en][0][lvl].append(np.nanmax(salt_z[:, :, lvl]))                        
                 
                 elif en == "average surface salinity":
-                    o.variables[en][time.index(item)] = salt[-1, :, :].mean()
+                    oDict[en][0][0].append(np.nanmean(salt[-1, :, :]))                    
                 
                 elif en == "minimum surface salinity":
-                    o.variables[en][time.index(item)] = salt[-1, :, :].min()
+                    oDict[en][0][0].append(np.nanmin(salt[-1, :, :]))                    
                 
                 elif en == "maximum surface salinity":
-                    o.variables[en][time.index(item)] = salt[-1, :, :].max()
+                    oDict[en][0][0].append(np.nanmax(salt[-1, :, :]))                    
                 
                 elif en == "average bottom salinity":
-                    o.variables[en][time.index(item)] = salt[0, :, :].mean()
+                    oDict[en][0][0].append(np.nanmean(salt[0, :, :]))                    
                 
                 elif en == "minimum bottom salinity":
-                    o.variables[en][time.index(item)] = salt[0, :, :].min()
+                    oDict[en][0][0].append(np.nanmin(salt[0, :, :]))                    
                 
                 elif en == "maximum bottom salinity":
-                    o.variables[en][time.index(item)] = salt[0, :, :].max()
+                    oDict[en][0][0].append(np.nanmax(salt[0, :, :]))                    
                 
                 elif en == "average density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                        dens = self.rho_eos(temp, salt, -z_rho) 
                     if "dens_z" not in locals():
-                        print("   Density z-slicing...")
+                        print("   Density z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Density z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         dens_z = self.zslice(z_rho, dens, z, H, zeta)
                     for lvl in list(range(N)):
-                        value = dens_z[:, :, lvl].mean()
-                        if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                        o.variables[en][lvl, time.index(item)] = value                    
+                        oDict[en][0][lvl].append(np.nanmean(dens_z[:, :, lvl]))                        
                 
                 elif en == "minimum density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                        dens = self.rho_eos(temp, salt, -z_rho) 
                     if "dens_z" not in locals():
-                        print("   Density z-slicing...")
+                        print("   Density z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Density z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         dens_z = self.zslice(z_rho, dens, z, H, zeta)
                     for lvl in list(range(N)):
-                        value = dens_z[:, :, lvl].min()
-                        if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                        o.variables[en][lvl, time.index(item)] = value                    
+                        oDict[en][0][lvl].append(np.nanmin(dens_z[:, :, lvl]))                        
                 
                 elif en == "maximum density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                        dens = self.rho_eos(temp, salt, -z_rho) 
                     if "dens_z" not in locals():
-                        print("   Density z-slicing...")
+                        print("   Density z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Density z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         dens_z = self.zslice(z_rho, dens, z, H, zeta)
                     for lvl in list(range(N)):
-                        value = dens_z[:, :, lvl].max()
-                        if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                        o.variables[en][lvl, time.index(item)] = value                    
+                        oDict[en][0][lvl].append(np.nanmax(dens_z[:, :, lvl]))                        
                 
                 elif en == "average surface density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
-                    o.variables[en][time.index(item)] = dens[-1, :, :].mean()
+                        dens = self.rho_eos(temp, salt, -z_rho) 
+                    oDict[en][0][0].append(np.nanmean(dens[-1, :, :]))                    
                 
                 elif en == "minimum surface density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
-                    o.variables[en][time.index(item)] = dens[-1, :, :].min()
+                        dens = self.rho_eos(temp, salt, -z_rho) 
+                    oDict[en][0][0].append(np.nanmin(dens[-1, :, :]))                    
                 
                 elif en == "maximum surface density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
-                    o.variables[en][time.index(item)] = dens[-1, :, :].max()                    
+                        dens = self.rho_eos(temp, salt, -z_rho) 
+                    oDict[en][0][0].append(np.nanmax(dens[-1, :, :]))                    
                 
                 elif en == "average bottom density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
-                    o.variables[en][time.index(item)] = dens[0, :, :].mean()                   
+                        dens = self.rho_eos(temp, salt, -z_rho) 
+                    oDict[en][0][0].append(np.nanmean(dens[0, :, :]))                    
                 
                 elif en == "minimum bottom density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
-                    o.variables[en][time.index(item)] = dens[0, :, :].min()                    
+                        dens = self.rho_eos(temp, salt, -z_rho) 
+                    oDict[en][0][0].append(np.nanmin(dens[0, :, :]))                    
                 
                 elif en == "maximum bottom density":
                     if "dens" not in locals():
-                        print("   Computing density...")
+                        print("   Computing density...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
-                    o.variables[en][time.index(item)] = dens[0 :, :].max()
+                        dens = self.rho_eos(temp, salt, -z_rho) 
+                    oDict[en][0][0].append(np.nanmax(dens[0 :, :]))                    
                 
                 elif en == "average u":
                     if "u_z" not in locals():
-                        print("   u-velocity z-slicing...")
+                        print("   u-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         u_z = self.zslice(z_rho, u, z, H, zeta)                    
                     for lvl in list(range(N)):
-                         value = u_z[:, :, lvl].mean()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value  
+                        oDict[en][0][lvl].append(np.nanmean(u_z[:, :, lvl]))                        
                          
                 elif en == "minimum u":
                     if "u_z" not in locals():
-                        print("   u-velocity z-slicing...")
+                        print("   u-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         u_z = self.zslice(z_rho, u, z, H, zeta)                    
                     for lvl in list(range(N)):
-                         value = u_z[:, :, lvl].min()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value                          
+                        oDict[en][0][lvl].append(np.nanmin(u_z[:, :, lvl]))                         
                 
                 elif en == "maximum u":
                     if "u_z" not in locals():
-                        print("   u-velocity z-slicing...")
+                        print("   u-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         u_z = self.zslice(z_rho, u, z, H, zeta)                    
                     for lvl in list(range(N)):
-                         value = u_z[:, :, lvl].max()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value
+                        oDict[en][0][lvl].append(np.nanmax(u_z[:, :, lvl]))                         
                          
                 elif en == "average surface u":
-                    o.variables[en][time.index(item)] = u[-1, :, :].mean()
+                    oDict[en][0][0].append(np.nanmean(u[-1, :, :]))                    
                     
                 elif en == "minimum surface u":
-                    o.variables[en][time.index(item)] = u[-1, :, :].min()                    
+                    oDict[en][0][0].append(np.nanmin(u[-1, :, :]))                    
                 
                 elif en == "maximum surface u":
-                    o.variables[en][time.index(item)] = u[-1, :, :].max()
+                    oDict[en][0][0].append(np.nanmax(u[-1, :, :]))                    
             
                 elif en == "average bottom u":
-                    o.variables[en][time.index(item)] = u[0, :, :].mean()
+                    oDict[en][0][0].append(np.nanmean(u[0, :, :]))                    
                     
                 elif en == "minimum bottom u":
-                    o.variables[en][time.index(item)] = u[0, :, :].min()                    
+                    oDict[en][0][0].append(np.nanmin(u[0, :, :]))                    
             
                 elif en == "maximum bottom u":
-                    o.variables[en][time.index(item)] = u[0, :, :].max()
+                    oDict[en][0][0].append(np.nanmax(u[0, :, :]))                    
                 
                 elif en == "average v":
                     if "v_z" not in locals():
-                        print("  v-velocity z-slicing...")
+                        print("   v-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         v_z = self.zslice(z_rho, v, z, H, zeta)                    
-                    for lvl in list(range(N)):
-                         value = v_z[:, :, lvl].mean()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value   
+                    for lvl in list(range(N)):             
+                        oDict[en][0][lvl].append(np.nanmean(v_z[:, :, lvl]))                         
                          
                 elif en == "minimum v":
                     if "v_z" not in locals():
-                        print("  v-velocity z-slicing...")
+                        print("   v-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         v_z = self.zslice(z_rho, v, z, H, zeta)                    
                     for lvl in list(range(N)):
-                         value = v_z[:, :, lvl].min()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value                           
+                        oDict[en][0][lvl].append(np.nanmin(v_z[:, :, lvl]))                         
                 
                 elif en == "maximum v":
                     if "v_z" not in locals():
-                        print("  v-velocity z-slicing...")
+                        print("   v-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         v_z = self.zslice(z_rho, v, z, H, zeta)                    
                     for lvl in list(range(N)):
-                         value = v_z[:, :, lvl].max()
-                         if type(value) == np.ma.core.MaskedConstant:
-                             value = np.nan
-                         o.variables[en][lvl, time.index(item)] = value                      
+                        oDict[en][0][lvl].append(np.nanmax(v_z[:, :, lvl]))                         
             
                 elif en == "average surface v":
-                    o.variables[en][time.index(item)] = v[-1, :, :].mean() 
+                    oDict[en][0][0].append(np.nanmean(v[-1, :, :]))                    
                     
                 elif en == "minimum surface v":
-                    o.variables[en][time.index(item)] = v[-1, :, :].min()                     
+                    oDict[en][0][0].append(np.nanmin(v[-1, :, :]))                    
                 
                 elif en == "maximum surface v":
-                    o.variables[en][time.index(item)] = v[-1, :, :].max()     
+                    oDict[en][0][0].append(np.nanmax(v[-1, :, :]))                    
             
                 elif en == "average bottom v":
-                    o.variables[en][time.index(item)] = v[0, :, :].mean()   
+                    oDict[en][0][0].append(np.nanmean(v[0, :, :]))                    
                     
                 elif en == "minimum bottom v":
-                    o.variables[en][time.index(item)] = v[0, :, :].min()                     
+                    oDict[en][0][0].append(np.nanmin(v[0, :, :]))                    
             
                 elif en == "maximum bottom v":
-                    o.variables[en][time.index(item)] = v[0, :, :].max()  
+                    oDict[en][0][0].append(np.nanmax(v[0, :, :]))                    
                     
                 elif en == "average velocity":
                     if "u_z" not in locals():
-                        print("  u-velocity z-slicing...")
+                        print("   u-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         u_z = self.zslice(z_rho, u, z, H, zeta)
                     if "v_z" not in locals():
-                        print("  v-velocity z-slicing...")
+                        print("   v-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         v_z = self.zslice(z_rho, v, z, H, zeta)   
                     for lvl in list(range(N)):
-                         u_mean = u_z[:, :, lvl].mean()
-                         v_mean = v_z[:, :, lvl].mean()
-                         w = (u_mean**2 + v_mean**2)**.5                         
-                         if type(w) == np.ma.core.MaskedConstant:
-                             w = np.nan
-                         o.variables[en][lvl, time.index(item), 0] = w
-                         ANG = np.degrees(np.arctan2(v_mean, u_mean))
-                         if type(ANG) == np.ma.core.MaskedConstant:
-                             ANG = np.nan
-                         o.variables[en][lvl, time.index(item), 1] = ANG
+                         u_mean = np.nanmean(u_z[:, :, lvl])
+                         oDict[en][0][lvl].append(u_mean)
+                         v_mean = np.nanmean(v_z[:, :, lvl])
+                         oDict[en][1][lvl].append(v_mean)                         
                 
                 elif en == "maximum velocity":
                     if "u_z" not in locals():
-                        print("  u-velocity z-slicing...")
+                        print("   u-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   u-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         u_z = self.zslice(z_rho, u, z, H, zeta)
                     if "v_z" not in locals():
-                        print("  v-velocity z-slicing...")
+                        print("   v-velocity z-slicing...", file=fid)
                         self.summaryDisplay.insert(tk.END, "   v-velocity z-slicing...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         v_z = self.zslice(z_rho, v, z, H, zeta)                      
                     for lvl in list(range(N)):
                         w = (u_z[:, :, lvl]**2 + v_z[:, :, lvl]**2)**.5
-                        w_max = w.max()
-                        if type(w_max) == np.ma.core.MaskedConstant:
-                            w_max = np.nan
-                        o.variables[en][lvl, time.index(item), 0] = w_max
+                        w_max = np.nanmax(w)  
+                        oDict[en][0][lvl].append(w_max)
                         ANG = np.degrees(np.arctan2(v_z[:, :, lvl], u_z[:, :, lvl]))
-                        ANG = ANG[np.unravel_index(np.argmax(w), w.shape)]
-                        if type(ANG) == np.ma.core.MaskedConstant:
-                            ANG = np.nan
-                        o.variables[en][lvl, time.index(item), 1] = ANG   
+                        ANG = ANG[np.unravel_index(np.nanargmax(w), w.shape)]
+                        oDict[en][1][lvl].append(ANG)                        
             
                 elif en == "average surface velocity":
-                    u_mean = u[-1, :, :].mean()
-                    v_mean = v[-1, :, :].mean()
-                    w = (u_mean**2 + v_mean**2)**.5     
-                    if type(w) == np.ma.core.MaskedConstant:
-                             w = np.nan
-                    o.variables[en][time.index(item), 0] = w
-                    ANG = np.degrees(np.arctan2(v_mean, u_mean))
-                    if type(ANG) == np.ma.core.MaskedConstant:
-                         ANG = np.nan
-                    o.variables[en][time.index(item), 1] = ANG
+                    u_mean = np.nanmean(u[-1, :, :])
+                    oDict[en][0][0].append(u_mean)
+                    v_mean = np.nanmean(v[-1, :, :])
+                    oDict[en][1][0].append(v_mean)                 
     
                 elif en == "maximum surface velocity":
                     w = (u[-1, :, :]**2 + v[-1, :, :]**2)**.5
-                    w_max = w.max()
-                    if type(w_max) == np.ma.core.MaskedConstant:
-                        w_max = np.nan
-                    o.variables[en][time.index(item), 0] = w_max
+                    w_max = np.nanmax(w)
+                    oDict[en][0][0].append(w_max)
                     ANG = np.degrees(np.arctan2(v[-1, :, :], u[-1, :, :]))
-                    ANG = ANG[np.unravel_index(np.argmax(w), w.shape)]
-                    if type(ANG) == np.ma.core.MaskedConstant:
-                        ANG = np.nan
-                    o.variables[en][time.index(item), 1] = ANG 
+                    ANG = ANG[np.unravel_index(np.nanargmax(w), w.shape)]                    
+                    oDict[en][1][0].append(ANG)
 
                 elif en == "average bottom velocity":
-                    u_mean = u[0, :, :].mean()
-                    v_mean = v[0, :, :].mean()
-                    w = (u_mean**2 + v_mean**2)**.5     
-                    if type(w) == np.ma.core.MaskedConstant:
-                             w = np.nan
-                    o.variables[en][time.index(item), 0] = w
-                    ANG = np.degrees(np.arctan2(v_mean, u_mean))
-                    if type(ANG) == np.ma.core.MaskedConstant:
-                         ANG = np.nan
-                    o.variables[en][time.index(item), 1] = ANG
+                    u_mean = np.nanmean(u[0, :, :])
+                    oDict[en][0][0].append(u_mean)
+                    v_mean = np.nanmean(v[0, :, :])
+                    oDict[en][1][0].append(v_mean)                    
         
                 elif en == "maximum bottom velocity":
                     w = (u[0, :, :]**2 + v[0, :, :]**2)**.5
-                    w_max = w.max()
-                    if type(w_max) == np.ma.core.MaskedConstant:
-                        w_max = np.nan
-                    o.variables[en][time.index(item), 0] = w_max
+                    w_max = np.nanmax(w) 
+                    oDict[en][0][0].append(w_max)
                     ANG = np.degrees(np.arctan2(v[0, :, :], u[0, :, :]))
-                    ANG = ANG[np.unravel_index(np.argmax(w), w.shape)]
-                    if type(ANG) == np.ma.core.MaskedConstant:
-                        ANG = np.nan
-                    o.variables[en][time.index(item), 1] = ANG 
+                    ANG = ANG[np.unravel_index(np.nanargmax(w), w.shape)]                    
+                    oDict[en][1][0].append(ANG)                    
                 
                 elif en == "average potential energy deficit":
                     if "dens" not in locals():
-                        print("   Computing density")
+                        print("   Computing density", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                        dens = self.rho_eos(temp, salt, -z_rho) 
                     if "PED" not in locals():
-                        print("   Computing PED")
+                        print("   Computing PED", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing PED...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         PED = self.potential_energy_deficit(dens, z_rho, z_w, zeta, 200)
-                    o.variables[en][time.index(item)] = PED.mean() 
+                    oDict[en][0][0].append(np.nanmean(PED))                    
                 
                 elif en == "minimum potential energy deficit":
                     if "dens" not in locals():
-                        print("   Computing density")
+                        print("   Computing density", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                        dens = self.rho_eos(temp, salt, -z_rho) 
                     if "PED" not in locals():
-                        print("   Computing PED")
+                        print("   Computing PED", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing PED...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         PED = self.potential_energy_deficit(dens, z_rho, z_w, zeta, 200)
-                    o.variables[en][time.index(item)] = PED.min() 
+                    oDict[en][0][0].append(np.nanmin(PED))                    
                 
                 elif en == "maximum potential energy deficit":
                     if "dens" not in locals():
-                        print("   Computing density")
+                        print("   Computing density", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing density...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
-                        dens = self.rho_eos(temp, salt, -z_rho) - 1000
+                        dens = self.rho_eos(temp, salt, -z_rho) 
                     if "PED" not in locals():
-                        print("   Computing PED")
+                        print("   Computing PED", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing PED...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         PED = self.potential_energy_deficit(dens, z_rho, z_w, zeta, 200)
-                    o.variables[en][time.index(item)] = PED.max() 
+                    oDict[en][0][0].append(np.nanmax(PED))                    
                 
                 elif en == "average mixed layer depth":
                     if "MLD" not in locals():
-                        print("   Computing MLD")
+                        print("   Computing MLD", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing MLD...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         MLD = self.mixed_layer_depth(z_rho, temp, H, mask)
-                    o.variables[en][time.index(item)] = MLD.mean()                 
+                    oDict[en][0][0].append(np.nanmean(MLD))                    
                 
                 elif en == "deepest mixed layer depth":
                     if "MLD" not in locals():
-                        print("   Computing MLD")
+                        print("   Computing MLD", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing MLD...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         MLD = self.mixed_layer_depth(z_rho, temp, H, mask)
-                    o.variables[en][time.index(item)] = MLD.min()      
+                    oDict[en][0][0].append(np.nanmin(MLD))                    
                 
                 elif en == "shallowest mixed layer depth":
                     if "MLD" not in locals():
-                        print("   Computing MLD")
+                        print("   Computing MLD", file=fid)
                         self.summaryDisplay.insert(tk.END, "   Computing MLD...\n")
                         self.update(); self.summaryDisplay.yview_moveto(1)
                         MLD = self.mixed_layer_depth(z_rho, temp, H, mask)
-                    o.variables[en][time.index(item)] = MLD.max()    
+                    oDict[en][0][0].append(np.nanmax(MLD))                    
                 
                 elif en == "SST-based front index (average)":
-                    o.variables[en][time.index(item)] = self.sobel(temp[-1, :, :], mask).mean()
+                    oDict[en][0][0].append(np.nanmean(self.sobel(temp[-1, :, :], mask)))                    
                 
                 elif en == "SST-based front index (minimum)":
-                    o.variables[en][time.index(item)] = self.sobel(temp[-1, :, :], mask).min()
+                    oDict[en][0][0].append(np.nanmin(self.sobel(temp[-1, :, :], mask)))                    
                 
                 elif en == "SST-based front index (maximum)":
-                    o.variables[en][time.index(item)] = self.sobel(temp[-1, :, :], mask).max()                    
+                    oDict[en][0][0].append(np.nanmax(self.sobel(temp[-1, :, :], mask)))                    
                 
                 else:                              
                     raise ValueError("Unavailable variable")  
@@ -2934,118 +2953,238 @@ class Root(tk.Tk):
             if "w_z"    in locals(): del w_z
             if "PED"    in locals(): del PED
             if "MLD"    in locals(): del MLD
-                        
-        o.close()
+        
+        print("\nSTEP 2/" + str(2 + makeplot) + ": Average over time...\n", file=fid)
+        self.summaryDisplay.insert(tk.END, "\n\nSTEP 2/" + str(2 + makeplot) + ": Average over time...\n\n")
+        self.update(); self.summaryDisplay.yview_moveto(1)
+        for item in TIME:
+            print("   Averaging from " + \
+                                       item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
+                                       item[-1].strftime("%d-%b-%Y %H:%M") + "...\n", file=fid)
+            self.summaryDisplay.insert(tk.END, "   Averaging from " + \
+                                       item[0].strftime("%d-%b-%Y %H:%M") + " to " + \
+                                       item[-1].strftime("%d-%b-%Y %H:%M") + "...\n")
+            self.update(); self.summaryDisplay.yview_moveto(1)        
+            w = [t in item for t in time]
+            for ENTRY in oDict:
+                # Get number of dimensions
+                nd = var[ENTRY][1]
+                # Get function
+                fn = var[ENTRY][4]                 
+                # Get type
+                ty = var[ENTRY][10]
                 
+                if ty == "real":
+                    DATA = oDict[ENTRY][0]
+                    if nd == 3:
+                        o.variables[ENTRY][TIME.index(item)] = fn(list(compress(DATA[0], w)))
+                    else:                        
+                        for lvl in z:                     
+                            slc = DATA[z.index(lvl)]                                 
+                            o.variables[ENTRY][z.index(lvl), TIME.index(item)] = fn(list(compress(slc, w)))
+                            
+                else:                    
+                    if ENTRY[0:3] == "ave":
+                        # Get u
+                        u = oDict[ENTRY][0]
+                        # Get v
+                        v = oDict[ENTRY][1]
+                        
+                        if nd == 3:
+                            mean_u = fn(list(compress(u[0], w)))
+                            mean_v = fn(list(compress(v[0], w)))
+                            o.variables[ENTRY][TIME.index(item), 0] = (mean_u**2 + mean_v**2)**.5
+                            o.variables[ENTRY][TIME.index(item), 1] = np.degrees(np.arctan2(mean_v, mean_u))
+                        else:                            
+                            for lvl in z:                                
+                                u_z = u[z.index(lvl)]; mean_u = self.nanmean(list(compress(u_z, w)))
+                                v_z = v[z.index(lvl)]; mean_v = self.nanmean(list(compress(v_z, w)))
+                                o.variables[ENTRY][z.index(lvl), TIME.index(item), 0] = (mean_u**2 + mean_v**2)**.5
+                                o.variables[ENTRY][z.index(lvl), TIME.index(item), 1] = np.degrees(np.arctan2(mean_v, mean_u))                            
+                        
+                    elif ENTRY[0:3] == "max":
+                         # Get magnitude
+                         MAGN = oDict[ENTRY][0]
+                         # Get direction
+                         DIRE = oDict[ENTRY][1]
+                         
+                         if nd == 3:
+                             max_w = fn(list(compress(MAGN[0], w)))
+                             o.variables[ENTRY][TIME.index(item), 0] = max_w
+                             o.variables[ENTRY][TIME.index(item), 1] = DIRE[0][MAGN[0].index(max_w)]
+                         else:                             
+                             for lvl in z:                      
+                                 magn_z = MAGN[z.index(lvl)]
+                                 dire_z = DIRE[z.index(lvl)]
+                                 max_w = fn(list(compress(magn_z, w)))
+                                 o.variables[ENTRY][z.index(lvl), TIME.index(item), 0] = max_w
+                                 o.variables[ENTRY][z.index(lvl), TIME.index(item), 1] = dire_z[magn_z.index(max_w)]
+                
+        o.close()
+             
         if makeplot:
-            
-            o = netCDF4.Dataset(cdf, "r"); 
-            
-            tiempo = o.variables["time"][:].tolist(); tiempo = [self.offset + timedelta(seconds=item) for item in tiempo]
-            
             from matplotlib.dates import  DateFormatter
-            import matplotlib.pyplot as plt         
+            import matplotlib.pyplot as plt 
+            
+            o = netCDF4.Dataset(cdf, "r")
+            
+            # Read time
+            tiempo = o.variables["time"][:].tolist()
+            # Get mid-points of each interval
+            mid = [.5 * (t0 + t1) for t0, t1 in zip(tiempo[0], tiempo[1])]            
+            mid = [self.offset + timedelta(seconds=item) for item in mid] 
+            
+            # Get indexed of sorted time
+            idx = sorted(range(len(mid)), key=lambda k: mid[k])
+            
+            # Sort time
+            mid = sorted(mid)
                         
             # Create new directory
             if not os.path.isdir(self.dir + "/IMAGES"):
                 os.mkdir(self.dir + "/IMAGES")
                                    
-            print("\nSTEP 2/" + str(1 + makeplot) + ": Plotting...\n") 
-            self.summaryDisplay.insert(tk.END, "\n\nSTEP 2/" + str(1 + makeplot) + ": Plotting...\n\n")
+            print("\nSTEP 3/" + str(2 + makeplot) + ": Plotting...\n", file=fid) 
+            self.summaryDisplay.insert(tk.END, "\n\nSTEP 3/" + str(2 + makeplot) + ": Plotting...\n\n")
             self.update(); self.summaryDisplay.yview_moveto(1)
+            
             for en, nd, lg, un, cs, ca, mc, ty in zip(key, ndim, long, units, colorScale, colorAxis, colorMap, tipo):
-                print("   " + en)
+                if isnan(ca[0]): ca = False
+                print("   " + en, file=fid)
                 self.summaryDisplay.insert(tk.END, "   " + en + "\n")
                 self.update(); self.summaryDisplay.yview_moveto(1)
-                var_i = o.variables[en][:].tolist()
-               
+                
                 if nd == 3:
-                    for period in TIME:
-                        if ty == "complex":
-                            data = [(i, var_i[tiempo.index(i)][0]) for i in tiempo if i in period]                            
-                        else:
-                            data = [(i, var_i[tiempo.index(i)]) for i in tiempo if i in period]
+                    # New axes                                
+                    fig = plt.figure(figsize=(13.11, 8.10))
+                    ax = fig.add_subplot(111)
+                    
+                    # 3-D variables
+                    if ( ty == "complex" ): # complex variables
+                        # Get magnitude
+                        magn = o.variables[en][:, 0]
+                        # Sort magnitude
+                        magn = [magn[i] for i in idx]
                         
-                        # New axes
-                        fig, ax = plt.subplots(figsize=(13.11, 8.10))                        
+                        # Get direction
+                        dire = o.variables[en][:, 1]
+                        
+                        # Get (u, v)
+                        u = np.cos(np.deg2rad(dire))
+                        v = np.sin(np.deg2rad(dire))
+                        
+                        # Sort (u, v)                        
+                        u = [u[i] for i in idx]
+                        v = [v[i] for i in idx]
+                        
+                        # Draw feather plot
+                        ax.quiver(mid, [0 for i in mid], u, v)
+                        
+                    else: # real variables
+                        # Get magnitude
+                        magn = o.variables[en][:]
+                        # Sort magnitude
+                        magn = [magn[i] for i in idx]
+                    
+                    # Build data array
+                    data = [(t, value) for t, value in zip(mid, magn)]
+                    
+                    # Plot time series
+                    ax.plot_date(*zip(*data), "b.-"); ax.grid()
+                    
+                    # Format x-axis
+                    ax.xaxis.set_major_formatter( DateFormatter('%d-%b-%Y') ); plt.xticks(rotation=90)                                                
+                    
+                    # Format y-axis
+                    plt.yscale(cs)
+                    if ca:
+                        plt.ylim(ca[0], ca[1])
+                    if ( ca ) and cs == "linear":
+                        ytickslocs = np.arange(ca[0], ca[1]+1e-3, (ca[1]-ca[0])/5)                        
+                        plt.yticks(ticks=ytickslocs)
+                    if ( ty == "complex"):
+                        ylims = ax.get_ylim()
+                        locs, labels = plt.yticks()
+                        plt.ylim(locs[0], ylims[1])                        
+                    ax.set_ylabel(un, fontsize=16)
+                                                                    
+                    # Set title 
+                    ax.set_title(lg, fontsize=12, pad=15)
+                         
+                    plt.tight_layout()
+                    
+                    # Save figure
+                    plt.savefig(self.dir + "./IMAGES/" + en + "." + fmt, dpi=144)
+                    
+                    # Close figure
+                    plt.close()
+                        
+                elif nd == 4:
+                    # 4-D variables
+                    for level in z:                         
+                        # New axes                                
+                        fig = plt.figure(figsize=(13.11, 8.10))
+                        ax = fig.add_subplot(111) 
+                        
+                        if ( ty == "complex" ): # complex variables
+                            # Get magnitude
+                            magn = o.variables[en][z.index(level), :, 0]
+                            # Sort magnitude
+                            magn = [magn[i] for i in idx]
+                            
+                            # Get direction
+                            dire = o.variables[en][z.index(level), :, 1]
+                            
+                            # Get (u, v)
+                            u = np.cos(np.deg2rad(dire))
+                            v = np.sin(np.deg2rad(dire))
+                            
+                            # Sort (u, v)                        
+                            u = [u[i] for i in idx]
+                            v = [v[i] for i in idx]
+                            
+                            # Draw feather plot
+                            ax.quiver(mid, [0 for i in mid], u, v)
+                            
+                        else: # real variables
+                            # Get magnitude
+                            magn = o.variables[en][z.index(level), :]
+                            # Sort magnitude
+                            magn = [magn[i] for i in idx]
+                        
+                        # Build data array
+                        data = [(t, value) for t, value in zip(mid, magn)]
                         
                         # Plot time series
                         ax.plot_date(*zip(*data), "b.-"); ax.grid()
                         
-                        if ty == "complex":                            
-                            dire = [var_i[tiempo.index(i)][1] for i in tiempo if i in period]
-                            u_plot = np.cos(np.deg2rad(dire)); v_plot = np.sin(np.deg2rad(dire))
-                            ax.quiver(period, [0 for i in period], u_plot, v_plot)
-                        
-                        # x-axis
+                        # Format x-axis
                         ax.xaxis.set_major_formatter( DateFormatter('%d-%b-%Y') ); plt.xticks(rotation=90)                                                
                         
-                        # y-axis
+                        # Format y-axis
                         plt.yscale(cs)
-                        plt.ylim(ca[0], ca[1])
-                        if cs == "linear":
+                        if ca:
+                            plt.ylim(ca[0], ca[1])
+                        if ( ca ) and cs == "linear":
                             ytickslocs = np.arange(ca[0], ca[1]+1e-3, (ca[1]-ca[0])/5)                        
                             plt.yticks(ticks=ytickslocs)
-                        ax.set_ylabel(un, fontsize=16)
+                        if ( ty == "complex"):
+                            ylims = ax.get_ylim()
+                            locs, labels = plt.yticks()
+                            plt.ylim(locs[0], ylims[1])                            
+                        ax.set_ylabel(un, fontsize=16)                      
                                                                         
                         # Set title 
-                        ax.set_title(lg, fontsize=12, pad=15)
+                        ax.set_title(lg + " at " + str(-level) + " m depth", fontsize=12, pad=15)
                              
                         plt.tight_layout()
+                        
                         # Save figure
-                        plt.savefig(self.dir + "./IMAGES/" + en + "_" + period[0].strftime("%Y%m%d%H") + \
-                                    "_" +  period[-1].strftime("%Y%m%d%H") + "." + fmt, dpi=144)
+                        plt.savefig(self.dir + "./IMAGES/" + en + "_Z = " + \
+                                    str(-level) + "." + fmt, dpi=144)
                         
                         # Close figure
                         plt.close()
-                        
-                elif nd == 4:
-                    for level in z:
-                        if ty == "complex":
-                            var_z = var_i[z.index(level)][:]
-                        else:                                
-                            var_z = var_i[z.index(level)]
-                            
-                        for period in TIME:
-                            if ty == "complex":
-                                data = [(i, var_z[tiempo.index(i)][0]) for i in tiempo if i in period]                            
-                            else:
-                                data = [(i, var_z[tiempo.index(i)]) for i in tiempo if i in period]
-                            
-                            # New axes
-                            fig, ax = plt.subplots(figsize=(13.11, 8.10))                        
-                            
-                            # Plot time series
-                            ax.plot_date(*zip(*data), "b.-"); ax.grid()
-                            
-                            if ty == "complex":                            
-                                dire = [var_z[tiempo.index(i)][1] for i in tiempo if i in period]
-                                u_plot = np.cos(np.deg2rad(dire)); v_plot = np.sin(np.deg2rad(dire))
-                                ax.quiver(period, [0 for i in period], u_plot, v_plot)
-                            
-                            # x-axis
-                            ax.xaxis.set_major_formatter( DateFormatter('%d-%b-%Y') ); plt.xticks(rotation=90) 
-                                                        
-                            # y-axis
-                            plt.yscale(cs)
-                            plt.ylim(ca[0], ca[1])
-                            if cs == "linear":
-                                ytickslocs = np.arange(ca[0], ca[1]+1e-3, (ca[1]-ca[0])/5)                        
-                                plt.yticks(ticks=ytickslocs)
-                            ax.set_ylabel(un, fontsize=16)
-                                                                            
-                            # Set title 
-                            ax.set_title(lg + " Z = " + str(int(-level)) + " m", fontsize=12, pad=15)
-                                
-                            plt.tight_layout()
-                            # Save figure
-                            plt.savefig(self.dir + "./IMAGES/" + en + "_" + period[0].strftime("%Y%m%d%H") + \
-                                        "_" +  period[-1].strftime("%Y%m%d%H") + "_Z = " + str(int(-level)) + "." + fmt, dpi=144)
-                            
-                            # Close figure
-                            plt.close()                            
-                            
-                    
                                         
             o.close()
             
@@ -3405,9 +3544,9 @@ class Root(tk.Tk):
         
         """ Create global attributes """
         f.creation_date = datetime.now().strftime("%d-%b-%Y %H:%M")
-        f.northern_boundary = bry[0]
+        f.northern_boundary = bry[0]-1
         f.southern_boundary = bry[1]
-        f.eastern_boundary  = bry[2]
+        f.eastern_boundary  = bry[2]-1
         f.western_boundary  = bry[3]
         
         """ Create dimensions """
@@ -3477,22 +3616,23 @@ class Root(tk.Tk):
                 A.units = i4
                 
         f.close()
-        
-    def cdfseries(self, cdf, bry, N, T, z, TIME, offset, var):  
+    
+    def cdfseries(self, cdf, bry, N, z, t0, t1, offset, var):  
         import numpy as np
         """ Build output NetCDF """        
         f = netCDF4.Dataset(cdf, "w", format="NETCDF4")
         
         """ Create global attributes """
         f.creation_date = datetime.now().strftime("%d-%b-%Y %H:%M")
-        f.northern_boundary = bry[0]
+        f.northern_boundary = bry[0]-1
         f.southern_boundary = bry[1]
-        f.eastern_boundary  = bry[2]
+        f.eastern_boundary  = bry[2]-1
         f.western_boundary  = bry[3]
         
         """ Create dimensions """
         f.createDimension("z", N)
-        f.createDimension("T", T) 
+        f.createDimension("T", len(t0)) 
+        f.createDimension("two", 2)
         f.createDimension("complex", 2)        
         
         """ Z """
@@ -3505,13 +3645,15 @@ class Root(tk.Tk):
             depth[:] = z
         
         """ T """
-        time = f.createVariable("time", "f8", dimensions=("T"), \
+        time = f.createVariable("time", "f8", dimensions=("two", "T"), \
                                 zlib=True)
-        time.long_name = "time"
+        time.long_name = "user-selected periods"
         time.units = "seconds"
         time.offset = offset.strftime("%Y-%b-%d %H:%M")                     
-        if TIME:
-            time[:] = [(item - offset).total_seconds() for item in TIME]            
+        time.first_column = "starting time"        
+        time.second_column = "end time"
+        time[:] = np.array([[(item - offset).total_seconds() for item in t0], \
+                               [(item - offset).total_seconds() for item in t1]])           
     
         """ Load metadata """
         # Keyword
@@ -3546,55 +3688,6 @@ class Root(tk.Tk):
         edate = self.dates[len(self.mon) - 1 - self.mon[::-1].index(emn)]
         return idate, edate
     
-    def util2(self, a, b, modo):
-        import numpy as np
-        import itertools
-        
-        if a.shape != b.shape:
-            raise ValueError("Arrays must be the same size!")
-        (L, M, T) = a.shape
-        
-        if modo == "max":
-            ind = [item for sublist in np.argmax(a, axis=2).tolist() for item in sublist]
-        elif modo == "min":
-            ind = [item for sublist in np.argmin(a, axis=2).tolist() for item in sublist]
-        else:
-            raise ValueError("Mode must be either MAX or MIN")
-        
-        o = [x for x in itertools.product(list(range(L)), list(range(M)))]
-        
-        iidx = [x[0] for x in o]
-        jidx = [x[1] for x in o]
-    
-        c = b[iidx, jidx, ind].reshape((L, M))
-        return c
-    
-    def util3(self, a, b, modo):
-        import numpy as np
-        import itertools
-        
-        if a.shape != b.shape:
-            raise ValueError("Arrays must be the same size!")
-        (L, M, N, T) = a.shape
-        
-        if modo == "max":
-            ind = [item for sublist in np.argmax(a, axis=3).tolist() for item in sublist]
-            ind = [item for sublist in ind for item in sublist]
-        elif modo == "min":
-            ind = [item for sublist in np.argmin(a, axis=3).tolist() for item in sublist]
-            ind = [item for sublist in ind for item in sublist]
-        else:
-            raise ValueError("Mode must be either MAX or MIN")
-        
-        o = [x for x in itertools.product(list(range(L)), list(range(M)), list(range(N)))]
-        
-        iidx = [x[0] for x in o]
-        jidx = [x[1] for x in o]
-        kidx = [x[2] for x in o]
-    
-        c = b[iidx, jidx, kidx, ind].reshape((L, M, N))
-        return c
-    
     def ProcessPeriod(self, v0, v1, n, mode):
         import numpy as np
         idx = np.ones(v1.shape, dtype=bool)
@@ -3611,11 +3704,20 @@ class Root(tk.Tk):
         idx[o == v0] = False
         o = o
         return o, idx
+    
+    def nanmean(self, lista):
+        lista = [i for i in lista if not(isnan(i))]
+        if len(lista):
+            return sum(lista)/len(lista)
+        else:
+            return float("nan")
         
-if __name__ == "__main__" :  
-    import sys
-    orig = sys.stdout
-    sys.stdout = open("log.txt", "w")
+if __name__ == "__main__" : 
+    # Open log file
+    fid = open("log.txt", "w")
+    # Create window object
     root = Root()
+    # Run window
     root.mainloop() 
-    sys.stdout = orig
+    # Close log file
+    fid.close()
